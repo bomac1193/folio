@@ -1,0 +1,101 @@
+// Prisma schema for FOLIO - Creative Intelligence Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  collections        Collection[]
+  tasteProfile       TasteProfile?
+  generatedVariants  GeneratedVariant[]
+}
+
+model Collection {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String
+  url       String?
+  platform  String   // Platform enum: TIKTOK, YOUTUBE_SHORT, INSTAGRAM_REEL, YOUTUBE_LONG, TWITTER, LINKEDIN
+  thumbnail String?
+  savedAt   DateTime @default(now())
+
+  // Performance data
+  views      Int?
+  engagement Float?   // engagement rate if available
+
+  // Decomposed analysis (stored as JSON strings for SQLite)
+  performanceDNA String?  // AI-analyzed performance vectors
+  aestheticDNA   String?  // AI-analyzed taste vectors
+
+  // User annotations
+  notes String?
+  tags  String?  // comma-separated tags for SQLite compatibility
+
+  items CollectionItem[]
+
+  @@index([userId])
+  @@index([platform])
+}
+
+model CollectionItem {
+  id           String     @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  type     String   // ItemType: TITLE, HOOK, THUMBNAIL, DESCRIPTION
+  content  String
+  position Int?     // for ordered items
+
+  @@index([collectionId])
+}
+
+model TasteProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Learned patterns (updated as user saves items) - JSON strings
+  performancePatterns String?  // what makes things viral
+  aestheticPatterns   String?  // what the user aesthetically prefers
+  voiceSignature      String?  // linguistic patterns
+
+  // Metadata
+  itemCount     Int      @default(0)
+  lastTrainedAt DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model GeneratedVariant {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  prompt  String
+  variant String   // generated title/hook
+
+  // Dual-axis scoring
+  performanceScore Float  // predicted viral potential (0-100)
+  tasteScore       Float  // alignment with user's taste (0-100)
+
+  // Context
+  platform         String   // Platform enum
+  sourceCollection String?  // reference to Collection if based on saved item
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
