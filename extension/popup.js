@@ -1,6 +1,6 @@
 // FOLIO Extension Popup
 
-const API_BASE = 'http://localhost:3000' // Change in production
+const API_BASE = 'http://localhost:3000'
 
 // Platform detection
 const PLATFORMS = {
@@ -21,19 +21,13 @@ const PLATFORM_LABELS = {
 
 // State
 let contentData = null
-let note = ''
+let currentTabId = null
+let pollInterval = null
+let lastVideoIdentifier = null
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
   const content = document.getElementById('content')
-
-  // Check if logged in
-  const authToken = await getAuthToken()
-
-  if (!authToken) {
-    showLoginState(content)
-    return
-  }
 
   // Get current tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -43,6 +37,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     return
   }
 
+  currentTabId = tab.id
+
   // Check if supported platform
   const platform = detectPlatform(tab.url)
 
@@ -50,6 +46,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     showUnsupportedState(content)
     return
   }
+
+  // Get YouTube thumbnail from URL as fallback
+  const ytThumbnail = platform.includes('YOUTUBE') ? getYouTubeThumbnail(tab.url) : null
 
   // Extract content from page
   try {
@@ -60,18 +59,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (response && response.title) {
       contentData = {
         ...response,
+        platform: response.platform || platform,
+        url: response.url || tab.url,
+        thumbnail: response.thumbnail || ytThumbnail,
+        videoId: response.videoId || null,
+      }
+      lastVideoIdentifier = response.url || response.videoId
+      showSaveState(content, contentData)
+
+      // Start polling for TikTok to get real-time updates
+      if (platform === 'TIKTOK') {
+        startPolling(tab.id, content)
+      }
+    } else {
+      // Fallback to tab title
+      contentData = {
+        title: cleanTitle(tab.title, platform),
+        thumbnail: ytThumbnail,
+        views: null,
+        engagement: null,
         platform,
         url: tab.url,
       }
       showSaveState(content, contentData)
-    } else {
-      showUnsupportedState(content)
     }
   } catch {
-    // Content script not loaded, try to extract from tab
+    // Content script not loaded, use tab info
     contentData = {
-      title: tab.title || 'Untitled',
-      thumbnail: null,
+      title: cleanTitle(tab.title, platform),
+      thumbnail: ytThumbnail,
       views: null,
       engagement: null,
       platform,
@@ -84,32 +100,48 @@ document.addEventListener('DOMContentLoaded', async () => {
 function detectPlatform(url) {
   try {
     const hostname = new URL(url).hostname.replace('www.', '')
+
+    // Check for YouTube Shorts
+    if (hostname === 'youtube.com' && url.includes('/shorts/')) {
+      return 'YOUTUBE_SHORT'
+    }
+
     return PLATFORMS[hostname] || null
   } catch {
     return null
   }
 }
 
-async function getAuthToken() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['authToken'], (result) => {
-      resolve(result.authToken || null)
-    })
-  })
+function cleanTitle(title, platform) {
+  if (!title) return 'Untitled'
+
+  // Remove platform suffixes
+  return title
+    .replace(' - YouTube', '')
+    .replace(' | TikTok', '')
+    .replace(' • Instagram', '')
+    .replace(' / X', '')
+    .replace(' / Twitter', '')
+    .trim()
 }
 
-function showLoginState(container) {
-  container.innerHTML = `
-    <div class="state">
-      <div class="state-title">Sign in to FOLIO</div>
-      <div class="state-text">
-        Connect your account to save content.
-      </div>
-      <a href="${API_BASE}/login" target="_blank" class="state-link">
-        Sign in
-      </a>
-    </div>
-  `
+function getYouTubeThumbnail(url) {
+  try {
+    // Handle shorts
+    if (url.includes('/shorts/')) {
+      const match = url.match(/\/shorts\/([a-zA-Z0-9_-]+)/)
+      if (match) {
+        return `https://img.youtube.com/vi/${match[1]}/maxresdefault.jpg`
+      }
+    }
+    // Handle regular videos
+    const urlObj = new URL(url)
+    const videoId = urlObj.searchParams.get('v')
+    if (videoId) {
+      return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+    }
+  } catch {}
+  return null
 }
 
 function showUnsupportedState(container) {
@@ -117,15 +149,18 @@ function showUnsupportedState(container) {
     <div class="state">
       <div class="state-title">Unsupported page</div>
       <div class="state-text">
-        FOLIO works on YouTube, TikTok, Instagram, and Twitter.
+        FOLIO works on YouTube, TikTok, Instagram, and Twitter/X.
       </div>
     </div>
   `
 }
 
-function showSaveState(container, data) {
+function showSaveState(container, data, isUpdate = false) {
+  const isTikTok = data.platform === 'TIKTOK'
+  const existingNote = document.getElementById('note-input')?.value || ''
+
   container.innerHTML = `
-    <div class="thumbnail">
+    <div class="thumbnail ${isUpdate ? 'content-updated' : ''}">
       ${
         data.thumbnail
           ? `<img src="${data.thumbnail}" alt="Thumbnail" />`
@@ -133,12 +168,16 @@ function showSaveState(container, data) {
       }
     </div>
 
-    <div class="label">Title detected</div>
-    <div class="title">${escapeHtml(data.title)}</div>
+    <div class="label" style="display: flex; align-items: center;">
+      <span>Title detected</span>
+      ${isTikTok ? '<span class="live-indicator"><span class="live-dot"></span>LIVE</span>' : ''}
+    </div>
+    <div class="title ${isUpdate ? 'content-updated' : ''}">${escapeHtml(data.title)}</div>
 
     <div class="meta">
-      <span class="platform-badge">${PLATFORM_LABELS[data.platform]}</span>
+      <span class="platform-badge">${PLATFORM_LABELS[data.platform] || data.platform}</span>
       ${data.views ? `<span>${formatViews(data.views)} views</span>` : ''}
+      ${data.videoId ? `<span class="video-id">ID: ${data.videoId.slice(-8)}</span>` : ''}
     </div>
 
     <div class="note-section">
@@ -147,92 +186,41 @@ function showSaveState(container, data) {
         class="note-input"
         placeholder="Add note (optional)"
         rows="2"
-      ></textarea>
+      >${existingNote}</textarea>
     </div>
-
-    <div id="error" class="error" style="display: none;"></div>
 
     <button id="save-btn" class="btn">
       Save to Collection
     </button>
+
+    <div class="hint">${isTikTok ? 'Scroll to change video - ' : ''}Opens FOLIO to complete save</div>
   `
 
-  // Event listeners
-  document.getElementById('note-input').addEventListener('input', (e) => {
-    note = e.target.value
+  // Event listener for save
+  document.getElementById('save-btn').addEventListener('click', () => {
+    const noteValue = document.getElementById('note-input').value
+    handleSave(noteValue)
+  })
+}
+
+function handleSave(note) {
+  // Build URL with content data
+  const params = new URLSearchParams({
+    title: contentData.title,
+    url: contentData.url,
+    platform: contentData.platform,
+    ...(contentData.thumbnail && { thumbnail: contentData.thumbnail }),
+    ...(contentData.views && { views: contentData.views.toString() }),
+    ...(note && { notes: note }),
   })
 
-  document.getElementById('save-btn').addEventListener('click', handleSave)
-}
+  // Open save page in new tab
+  chrome.tabs.create({
+    url: `${API_BASE}/save?${params.toString()}`
+  })
 
-function showSuccessState(container) {
-  container.innerHTML = `
-    <div class="state success">
-      <div class="state-title">Saved to collection</div>
-      <div class="state-text">
-        AI analysis will run in the background.
-      </div>
-      <a href="${API_BASE}/dashboard" target="_blank" class="state-link">
-        View in FOLIO
-      </a>
-    </div>
-  `
-}
-
-async function handleSave() {
-  const btn = document.getElementById('save-btn')
-  const errorEl = document.getElementById('error')
-
-  btn.disabled = true
-  btn.textContent = 'Saving...'
-  errorEl.style.display = 'none'
-
-  try {
-    const authToken = await getAuthToken()
-
-    const response = await fetch(`${API_BASE}/api/collections`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        title: contentData.title,
-        url: contentData.url,
-        platform: contentData.platform,
-        thumbnail: contentData.thumbnail,
-        views: contentData.views,
-        engagement: contentData.engagement,
-        notes: note || null,
-      }),
-    })
-
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || 'Failed to save')
-    }
-
-    const collection = await response.json()
-
-    // Trigger analysis in background
-    fetch(`${API_BASE}/api/analyze`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({ itemId: collection.id }),
-    }).catch(() => {
-      // Ignore analysis errors
-    })
-
-    showSuccessState(document.getElementById('content'))
-  } catch (error) {
-    btn.disabled = false
-    btn.textContent = 'Save to Collection'
-    errorEl.textContent = error.message
-    errorEl.style.display = 'block'
-  }
+  // Close popup
+  window.close()
 }
 
 function escapeHtml(text) {
@@ -250,3 +238,53 @@ function formatViews(views) {
   }
   return views.toString()
 }
+
+// Poll content script for video changes (TikTok)
+function startPolling(tabId, container) {
+  // Clear any existing interval
+  if (pollInterval) {
+    clearInterval(pollInterval)
+  }
+
+  console.log('FOLIO Popup: Starting poll for tab', tabId)
+
+  pollInterval = setInterval(async () => {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: 'EXTRACT_CONTENT',
+      })
+
+      if (response && response.title) {
+        const newIdentifier = response.url || response.videoId
+
+        // Check if video changed
+        if (newIdentifier && newIdentifier !== lastVideoIdentifier) {
+          console.log('FOLIO Popup: Video changed!', response.title?.slice(0, 40))
+          lastVideoIdentifier = newIdentifier
+          contentData = {
+            ...response,
+            platform: response.platform || 'TIKTOK',
+            url: response.url,
+            thumbnail: response.thumbnail,
+            videoId: response.videoId,
+          }
+          showSaveState(container, contentData, true)
+        }
+      }
+    } catch (e) {
+      // Tab closed or content script not responding
+      console.log('FOLIO Popup: Poll error, stopping', e.message)
+      stopPolling()
+    }
+  }, 300) // Poll every 300ms for responsiveness
+}
+
+function stopPolling() {
+  if (pollInterval) {
+    clearInterval(pollInterval)
+    pollInterval = null
+  }
+}
+
+// Stop polling when popup closes
+window.addEventListener('unload', stopPolling)

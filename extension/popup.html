@@ -97,6 +97,12 @@
       color: #6B6B6B;
     }
 
+    .video-id {
+      font-family: 'Consolas', monospace;
+      font-size: 10px;
+      color: #9B9B9B;
+    }
+
     /* Note input */
     .note-section {
       margin-bottom: 16px;
@@ -180,9 +186,50 @@
       margin-bottom: 12px;
     }
 
+    /* Hint */
+    .hint {
+      text-align: center;
+      font-size: 10px;
+      color: #9B9B9B;
+      margin-top: 8px;
+    }
+
     /* Loading */
     .loading {
       opacity: 0.5;
+    }
+
+    /* Live update indicator */
+    .live-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      color: #2D3A2E;
+      margin-left: auto;
+    }
+
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      background: #2D3A2E;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Content update flash */
+    .content-updated {
+      animation: flash 0.3s ease-out;
+    }
+
+    @keyframes flash {
+      0% { background: #E8F5E9; }
+      100% { background: transparent; }
     }
   </style>
 </head>

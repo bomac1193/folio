@@ -30,11 +30,20 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 })
 
 // Update badge when collection is updated
+// Also relay VIDEO_CHANGED messages to popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'UPDATE_BADGE') {
     chrome.action.setBadgeText({ text: message.count.toString() })
     chrome.action.setBadgeBackgroundColor({ color: '#0A0A0A' })
     sendResponse({ success: true })
   }
+
+  // Relay video change messages - popup will receive these
+  if (message.type === 'VIDEO_CHANGED') {
+    // Message is automatically available to popup since it's also listening
+    // to chrome.runtime.onMessage
+    console.log('FOLIO Background: Video changed', message.data?.title?.slice(0, 30))
+  }
+
   return true
 })

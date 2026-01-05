@@ -3,26 +3,50 @@ import { prisma } from '@/lib/db'
 import CollectionGrid from '@/components/CollectionGrid'
 import CollectionStats from '@/components/CollectionStats'
 import CollectionFilters from '@/components/CollectionFilters'
+import RescanButton from '@/components/RescanButton'
+import { PLATFORMS, type Platform } from '@/lib/types'
 
-export default async function DashboardPage() {
+interface PageProps {
+  searchParams: Promise<{ platform?: string; search?: string }>
+}
+
+export default async function DashboardPage({ searchParams }: PageProps) {
   const session = await auth()
+  const params = await searchParams
 
   if (!session?.user?.id) {
     return null
   }
 
+  // Build filter conditions
+  const where: Record<string, unknown> = { userId: session.user.id }
+
+  if (params.platform && Object.values(PLATFORMS).includes(params.platform as Platform)) {
+    where.platform = params.platform
+  }
+
+  if (params.search) {
+    where.title = { contains: params.search }
+  }
+
   const collections = await prisma.collection.findMany({
-    where: { userId: session.user.id },
+    where,
     orderBy: { savedAt: 'desc' },
   })
 
+  // Get all collections for stats (unfiltered)
+  const allCollections = await prisma.collection.findMany({
+    where: { userId: session.user.id },
+    select: { platform: true, performanceDNA: true },
+  })
+
   const stats = {
-    totalItems: collections.length,
-    avgPerformance: collections.reduce((acc, c) => {
+    totalItems: allCollections.length,
+    avgPerformance: allCollections.reduce((acc, c) => {
       const dna = c.performanceDNA ? JSON.parse(c.performanceDNA) : null
       return acc + (dna?.predictedScore || 0)
-    }, 0) / (collections.length || 1),
-    platforms: [...new Set(collections.map(c => c.platform))].length,
+    }, 0) / (allCollections.length || 1),
+    platforms: [...new Set(allCollections.map(c => c.platform))].length,
   }
 
   return (
@@ -33,10 +57,16 @@ export default async function DashboardPage() {
           <div>
             <h1 className="text-xl font-normal">Collection</h1>
             <p className="text-sm text-[var(--folio-text-muted)] mt-1">
-              {collections.length} items saved
+              {params.platform || params.search
+                ? `${collections.length} of ${allCollections.length} items`
+                : `${collections.length} items saved`
+              }
             </p>
           </div>
-          <CollectionStats stats={stats} />
+          <div className="flex items-center gap-6">
+            <RescanButton />
+            <CollectionStats stats={stats} />
+          </div>
         </div>
       </header>
 
@@ -45,7 +75,11 @@ export default async function DashboardPage() {
 
       {/* Content */}
       {collections.length === 0 ? (
-        <EmptyState />
+        params.platform || params.search ? (
+          <NoResults />
+        ) : (
+          <EmptyState />
+        )
       ) : (
         <CollectionGrid collections={collections} />
       )}
@@ -63,16 +97,23 @@ function EmptyState() {
           excellence in your field.
         </p>
         <div className="space-y-4">
-          <a
-            href="#install-extension"
-            className="btn btn-primary"
-          >
-            Install extension
-          </a>
           <p className="text-xs text-[var(--folio-text-muted)]">
-            Or add items manually via API
+            Use the browser extension to save from YouTube, TikTok, Instagram, or Twitter
           </p>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function NoResults() {
+  return (
+    <div className="flex flex-col items-center justify-center py-32 px-8">
+      <div className="max-w-md text-center">
+        <h2 className="text-lg font-normal mb-4">No items found.</h2>
+        <p className="text-sm text-[var(--folio-text-secondary)]">
+          Try adjusting your filters or search query.
+        </p>
       </div>
     </div>
   )
