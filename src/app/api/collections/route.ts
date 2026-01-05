@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { PLATFORMS, type Platform } from '@/lib/types'
+import { getYouTubeVideoStats, extractYouTubeVideoId } from '@/lib/services/youtubeApi'
 
 // GET - List user's collection
 export async function GET(request: Request) {
@@ -82,22 +83,74 @@ export async function POST(request: Request) {
       )
     }
 
+    // Extract video ID for API lookups
+    let videoId: string | null = null
+    let initialMetrics: {
+      views?: number
+      likes?: number
+      comments?: number
+      engagement?: number
+      viewsPerDay?: number
+      viralVelocity?: number
+      channelSubscribers?: number
+      publishedAt?: Date
+      ageInDays?: number
+    } = {}
+
+    // For YouTube, fetch real metrics from API
+    if ((platform === 'YOUTUBE_LONG' || platform === 'YOUTUBE_SHORT') && url) {
+      videoId = extractYouTubeVideoId(url)
+
+      if (videoId) {
+        const ytAnalysis = await getYouTubeVideoStats(videoId)
+
+        if (ytAnalysis) {
+          initialMetrics = {
+            views: ytAnalysis.stats.viewCount,
+            likes: ytAnalysis.stats.likeCount,
+            comments: ytAnalysis.stats.commentCount,
+            engagement: ytAnalysis.metrics.engagementRate,
+            viewsPerDay: ytAnalysis.metrics.viewsPerDay,
+            viralVelocity: ytAnalysis.metrics.viralVelocity,
+            channelSubscribers: ytAnalysis.stats.channelSubscribers || undefined,
+            publishedAt: new Date(ytAnalysis.stats.publishedAt),
+            ageInDays: ytAnalysis.metrics.ageInDays,
+          }
+        }
+      }
+    }
+
     const collection = await prisma.collection.create({
       data: {
         userId: session.user.id,
         title,
         url: url || null,
+        videoId,
         platform,
         thumbnail: thumbnail || null,
-        views: views ? parseInt(views) : null,
-        engagement: engagement ? parseFloat(engagement) : null,
+        // Use API metrics if available, otherwise use passed values
+        views: initialMetrics.views ?? (views ? parseInt(views) : null),
+        likes: initialMetrics.likes ?? null,
+        comments: initialMetrics.comments ?? null,
+        engagement: initialMetrics.engagement ?? (engagement ? parseFloat(engagement) : null),
+        // Store as initial metrics for tracking growth
+        initialViews: initialMetrics.views ?? (views ? parseInt(views) : null),
+        initialLikes: initialMetrics.likes ?? null,
+        initialComments: initialMetrics.comments ?? null,
+        // Performance metrics
+        viewsPerDay: initialMetrics.viewsPerDay ?? null,
+        viralVelocity: initialMetrics.viralVelocity ?? null,
+        channelSubscribers: initialMetrics.channelSubscribers ?? null,
+        publishedAt: initialMetrics.publishedAt ?? null,
+        ageInDays: initialMetrics.ageInDays ?? null,
+        // Tracking
+        lastCheckedAt: initialMetrics.views ? new Date() : null,
+        checkCount: initialMetrics.views ? 1 : 0,
+        // User annotations
         notes: notes || null,
         tags: Array.isArray(tags) ? tags.join(',') : null,
       },
     })
-
-    // Trigger AI analysis in background (we'll implement this later)
-    // analyzeCollection(collection.id)
 
     return NextResponse.json(collection, { status: 201 })
   } catch (error) {

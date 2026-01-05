@@ -19,8 +19,12 @@ export default function CollectionCard({ collection }: CollectionCardProps) {
     ? JSON.parse(collection.aestheticDNA)
     : null
 
-  const performanceScore = performanceDNA?.predictedScore ?? 0
+  // Use real viral velocity if available, otherwise fall back to AI prediction
+  const performanceScore = collection.viralVelocity ?? performanceDNA?.predictedScore ?? 0
   const tasteScore = aestheticDNA?.tasteScore ?? 0
+
+  // Check if we have real API data
+  const hasRealData = collection.viralVelocity !== null
 
   return (
     <div
@@ -52,10 +56,35 @@ export default function CollectionCard({ collection }: CollectionCardProps) {
           </span>
         </div>
 
-        {/* Hover overlay with DNA summary */}
-        {isHovered && (performanceDNA || aestheticDNA) && (
+        {/* Hover overlay with metrics and DNA summary */}
+        {isHovered && (hasRealData || performanceDNA || aestheticDNA) && (
           <div className="absolute inset-0 bg-[var(--folio-black)]/90 p-4 flex flex-col justify-end">
             <div className="text-white text-xs space-y-2">
+              {/* Real metrics from API */}
+              {hasRealData && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-white/60 uppercase tracking-wider">Views/Day</span>
+                    <span className="font-data">{formatViews(collection.viewsPerDay ?? 0)}</span>
+                  </div>
+                  {collection.growthRate != null && (
+                    <div className="flex justify-between">
+                      <span className="text-white/60 uppercase tracking-wider">Growth</span>
+                      <span className={`font-data ${collection.growthRate > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {collection.growthRate > 0 ? '+' : ''}{(collection.growthRate ?? 0).toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
+                  {collection.channelSubscribers && (
+                    <div className="flex justify-between">
+                      <span className="text-white/60 uppercase tracking-wider">Channel</span>
+                      <span className="font-data">{formatViews(collection.channelSubscribers)} subs</span>
+                    </div>
+                  )}
+                  <div className="border-t border-white/20 my-2" />
+                </>
+              )}
+              {/* AI analysis */}
               {performanceDNA && (
                 <div>
                   <span className="text-white/60 uppercase tracking-wider">Hooks:</span>{' '}
@@ -86,9 +115,19 @@ export default function CollectionCard({ collection }: CollectionCardProps) {
               {formatViews(collection.views)} views
             </span>
           )}
+          {collection.likes && (
+            <span className="font-data">
+              {formatViews(collection.likes)} likes
+            </span>
+          )}
           {collection.engagement && (
             <span className="font-data">
               {collection.engagement.toFixed(1)}% eng
+            </span>
+          )}
+          {hasRealData && (
+            <span className="text-green-600 text-[10px] uppercase tracking-wider">
+              Live
             </span>
           )}
         </div>
@@ -97,13 +136,13 @@ export default function CollectionCard({ collection }: CollectionCardProps) {
         {(performanceScore > 0 || tasteScore > 0) && (
           <div className="mt-4 space-y-2">
             <div className="flex items-center gap-3">
-              <span className="text-xs text-[var(--folio-text-muted)] w-20 uppercase tracking-wider">
-                Perform
+              <span className="text-xs text-[var(--folio-text-muted)] w-20 uppercase tracking-wider" title={hasRealData ? 'Based on real API data' : 'AI prediction'}>
+                {hasRealData ? 'Viral' : 'Perform'}
               </span>
               <div className="flex-1 score-bar">
                 <div
-                  className="score-bar-fill"
-                  style={{ width: `${performanceScore}%` }}
+                  className={`score-bar-fill ${hasRealData ? 'bg-green-600' : ''}`}
+                  style={{ width: `${Math.min(performanceScore, 100)}%` }}
                 />
               </div>
               <span className="font-data text-xs w-8 text-right">

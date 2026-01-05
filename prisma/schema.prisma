@@ -29,17 +29,42 @@ model Collection {
 
   title     String
   url       String?
+  videoId   String?  // Platform-specific video ID for API lookups
   platform  String   // Platform enum: TIKTOK, YOUTUBE_SHORT, INSTAGRAM_REEL, YOUTUBE_LONG, TWITTER, LINKEDIN
   thumbnail String?
   savedAt   DateTime @default(now())
 
-  // Performance data
-  views      Int?
-  engagement Float?   // engagement rate if available
+  // Initial metrics (when first saved)
+  initialViews    Int?
+  initialLikes    Int?
+  initialComments Int?
+
+  // Current/latest metrics (updated on re-check)
+  views           Int?
+  likes           Int?
+  comments        Int?
+  engagement      Float?   // engagement rate = (likes + comments) / views * 100
+
+  // Tracking data
+  lastCheckedAt   DateTime?
+  checkCount      Int       @default(0)
+
+  // Calculated performance metrics
+  growthRate      Float?    // % growth since initial save
+  viewsPerDay     Float?    // average views per day
+  viralVelocity   Float?    // score 0-100, how viral relative to channel size
+
+  // Channel context (for relative performance)
+  channelSubscribers Int?
+  publishedAt        DateTime?
+  ageInDays          Int?
 
   // Decomposed analysis (stored as JSON strings for SQLite)
   performanceDNA String?  // AI-analyzed performance vectors
   aestheticDNA   String?  // AI-analyzed taste vectors
+
+  // Video content analysis (stored as JSON)
+  videoAnalysis  String?  // AI analysis of actual video content (visuals, audio, pacing)
 
   // User annotations
   notes String?
@@ -49,6 +74,7 @@ model Collection {
 
   @@index([userId])
   @@index([platform])
+  @@index([videoId])
 }
 
 model CollectionItem {

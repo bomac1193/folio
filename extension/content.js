@@ -1,9 +1,14 @@
 // FOLIO Content Script
-// Extracts content metadata from supported platforms
+// Extracts content metadata and provides hover overlay for quick save
+
+const API_BASE = 'http://localhost:3000'
 
 // Store current video data
 let currentVideoData = null
 let lastVideoId = null
+let overlayVisible = false
+let currentOverlay = null
+let hoverTimeout = null
 
 // Listen for extraction requests from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -15,11 +20,551 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true
 })
 
-// Initialize platform-specific observers
+// Initialize based on platform
 const hostname = window.location.hostname.replace('www.', '')
+
+// Inject styles
+injectStyles()
+
+// Initialize platform-specific features
 if (hostname === 'tiktok.com') {
   initTikTokObserver()
+  initHoverOverlay('tiktok')
+} else if (hostname === 'youtube.com') {
+  initHoverOverlay('youtube')
+} else if (hostname === 'instagram.com') {
+  initHoverOverlay('instagram')
+} else if (hostname === 'twitter.com' || hostname === 'x.com') {
+  initHoverOverlay('twitter')
 }
+
+function injectStyles() {
+  const style = document.createElement('style')
+  style.textContent = `
+    .folio-overlay {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 99999;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+      pointer-events: auto;
+    }
+
+    .folio-save-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: rgba(10, 10, 10, 0.9);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .folio-save-btn:hover {
+      background: rgba(10, 10, 10, 1);
+      transform: scale(1.02);
+    }
+
+    .folio-save-btn.saved {
+      background: rgba(45, 58, 46, 0.95);
+    }
+
+    .folio-save-btn.saving {
+      opacity: 0.7;
+      cursor: wait;
+    }
+
+    .folio-logo {
+      font-size: 10px;
+      letter-spacing: 2px;
+      opacity: 0.8;
+    }
+
+    .folio-expanded {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 8px;
+      width: 280px;
+      background: rgba(250, 250, 248, 0.98);
+      border-radius: 4px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+    }
+
+    .folio-expanded-thumb {
+      width: 100%;
+      height: 140px;
+      background: #f5f5f0;
+      object-fit: cover;
+    }
+
+    .folio-expanded-content {
+      padding: 12px;
+    }
+
+    .folio-expanded-title {
+      font-size: 12px;
+      color: #0a0a0a;
+      line-height: 1.4;
+      margin-bottom: 8px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .folio-expanded-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 10px;
+      color: #6b6b6b;
+      margin-bottom: 12px;
+      font-family: 'Consolas', monospace;
+    }
+
+    .folio-expanded-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .folio-action-btn {
+      flex: 1;
+      padding: 8px;
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .folio-action-primary {
+      background: #0a0a0a;
+      color: white;
+    }
+
+    .folio-action-primary:hover {
+      background: #2a2a2a;
+    }
+
+    .folio-action-secondary {
+      background: #f5f5f0;
+      color: #0a0a0a;
+      border: 1px solid #e5e5e0;
+    }
+
+    .folio-action-secondary:hover {
+      background: #e5e5e0;
+    }
+
+    .folio-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 20px;
+      background: rgba(10, 10, 10, 0.95);
+      color: white;
+      font-size: 12px;
+      border-radius: 4px;
+      z-index: 999999;
+      animation: folio-slide-up 0.3s ease;
+      backdrop-filter: blur(8px);
+    }
+
+    .folio-toast.success {
+      background: rgba(45, 58, 46, 0.95);
+    }
+
+    .folio-toast.error {
+      background: rgba(139, 58, 58, 0.95);
+    }
+
+    @keyframes folio-slide-up {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  `
+  document.head.appendChild(style)
+}
+
+function initHoverOverlay(platform) {
+  console.log('FOLIO: Hover overlay initialized for', platform)
+
+  // Track which elements have overlays
+  const overlayedElements = new WeakSet()
+
+  // Function to add overlay to video elements
+  const addOverlayToVideos = () => {
+    let videoContainers = []
+
+    if (platform === 'youtube') {
+      // YouTube: target video thumbnails and player
+      videoContainers = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, #movie_player')
+    } else if (platform === 'tiktok') {
+      // TikTok: target video containers
+      videoContainers = document.querySelectorAll('[data-e2e="recommend-list-item-container"], [class*="DivItemContainer"], [class*="video-feed-item"]')
+      // Also get the main video player area
+      const mainPlayer = document.querySelector('[class*="DivVideoWrapper"]')
+      if (mainPlayer) videoContainers = [...videoContainers, mainPlayer]
+    } else if (platform === 'instagram') {
+      videoContainers = document.querySelectorAll('article, [role="presentation"]')
+    } else if (platform === 'twitter') {
+      videoContainers = document.querySelectorAll('[data-testid="tweet"], [data-testid="tweetPhoto"]')
+    }
+
+    videoContainers.forEach(container => {
+      if (overlayedElements.has(container)) return
+      if (!container.querySelector('video, img[src*="ytimg"], img[src*="thumbnail"]')) return
+
+      overlayedElements.add(container)
+
+      // Make container relative for overlay positioning
+      const computedStyle = window.getComputedStyle(container)
+      if (computedStyle.position === 'static') {
+        container.style.position = 'relative'
+      }
+
+      // Create overlay button
+      const overlay = createOverlayButton(container, platform)
+
+      // Show on hover
+      container.addEventListener('mouseenter', () => {
+        overlay.style.opacity = '1'
+        overlay.style.pointerEvents = 'auto'
+      })
+
+      container.addEventListener('mouseleave', (e) => {
+        // Don't hide if mouse moved to expanded panel
+        if (e.relatedTarget && overlay.contains(e.relatedTarget)) return
+        if (!overlay.querySelector('.folio-expanded')) {
+          overlay.style.opacity = '0'
+          overlay.style.pointerEvents = 'none'
+        }
+      })
+    })
+  }
+
+  // Initial scan
+  setTimeout(addOverlayToVideos, 1000)
+
+  // Watch for new videos (infinite scroll)
+  const observer = new MutationObserver(() => {
+    addOverlayToVideos()
+  })
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  })
+}
+
+function createOverlayButton(container, platform) {
+  const overlay = document.createElement('div')
+  overlay.className = 'folio-overlay'
+  overlay.style.opacity = '0'
+  overlay.style.pointerEvents = 'none'
+  overlay.style.transition = 'opacity 0.2s ease'
+
+  const btn = document.createElement('button')
+  btn.className = 'folio-save-btn'
+  btn.innerHTML = '<span class="folio-logo">FOLIO</span> Save'
+
+  let expanded = null
+
+  btn.addEventListener('click', async (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    // Toggle expanded view
+    if (expanded) {
+      expanded.remove()
+      expanded = null
+      overlay.style.opacity = '1'
+      return
+    }
+
+    // Extract data for this specific container
+    const data = extractFromContainer(container, platform)
+
+    expanded = document.createElement('div')
+    expanded.className = 'folio-expanded'
+
+    expanded.innerHTML = `
+      ${data.thumbnail ? `<img class="folio-expanded-thumb" src="${data.thumbnail}" alt="Thumbnail" />` : '<div class="folio-expanded-thumb"></div>'}
+      <div class="folio-expanded-content">
+        <div class="folio-expanded-title">${escapeHtml(data.title || 'Untitled')}</div>
+        <div class="folio-expanded-meta">
+          <span>${data.platform}</span>
+          ${data.views ? `<span>${formatViews(data.views)} views</span>` : ''}
+        </div>
+        <div class="folio-expanded-actions">
+          <button class="folio-action-btn folio-action-primary" data-action="save">Save to Collection</button>
+          <button class="folio-action-btn folio-action-secondary" data-action="close">✕</button>
+        </div>
+      </div>
+    `
+
+    overlay.appendChild(expanded)
+
+    // Handle actions
+    expanded.querySelector('[data-action="save"]').addEventListener('click', async () => {
+      const saveBtn = expanded.querySelector('[data-action="save"]')
+      saveBtn.textContent = 'Saving...'
+      saveBtn.disabled = true
+
+      const success = await saveToFolio(data)
+
+      if (success) {
+        btn.classList.add('saved')
+        btn.innerHTML = '<span class="folio-logo">FOLIO</span> ✓ Saved'
+        showToast('Saved to collection', 'success')
+        expanded.remove()
+        expanded = null
+      } else {
+        saveBtn.textContent = 'Save to Collection'
+        saveBtn.disabled = false
+        showToast('Save failed - check if logged in', 'error')
+      }
+    })
+
+    expanded.querySelector('[data-action="close"]').addEventListener('click', () => {
+      expanded.remove()
+      expanded = null
+    })
+
+    // Close when clicking outside
+    const closeOnClickOutside = (e) => {
+      if (!overlay.contains(e.target)) {
+        if (expanded) {
+          expanded.remove()
+          expanded = null
+        }
+        document.removeEventListener('click', closeOnClickOutside)
+      }
+    }
+    setTimeout(() => document.addEventListener('click', closeOnClickOutside), 100)
+  })
+
+  overlay.appendChild(btn)
+  container.appendChild(overlay)
+
+  return overlay
+}
+
+function extractFromContainer(container, platform) {
+  if (platform === 'tiktok') {
+    return extractTikTokFromContainer(container)
+  } else if (platform === 'youtube') {
+    return extractYouTubeFromContainer(container)
+  } else if (platform === 'instagram') {
+    return extractInstagram()
+  } else if (platform === 'twitter') {
+    return extractTwitter()
+  }
+  return { title: 'Unknown', platform: platform.toUpperCase() }
+}
+
+function extractTikTokFromContainer(container) {
+  // Try to get video link
+  let videoUrl = window.location.href
+  let videoId = null
+
+  const link = container.querySelector('a[href*="/video/"]')
+  if (link) {
+    videoUrl = link.href
+    const match = videoUrl.match(/\/video\/(\d+)/)
+    if (match) videoId = match[1]
+  }
+
+  // URL might have video ID
+  if (!videoId) {
+    const urlMatch = window.location.href.match(/\/video\/(\d+)/)
+    if (urlMatch) videoId = urlMatch[1]
+  }
+
+  // Get title/description
+  let title = ''
+  const descEl = container.querySelector('[data-e2e="video-desc"], [data-e2e="browse-video-desc"]')
+  if (descEl) {
+    title = descEl.textContent.trim()
+  }
+
+  if (!title) {
+    const textEls = container.querySelectorAll('span, div')
+    for (const el of textEls) {
+      const text = el.textContent.trim()
+      if ((text.length > 20 || text.includes('#')) && !/^\d+[KMB]?$/.test(text)) {
+        title = text
+        break
+      }
+    }
+  }
+
+  // Get username
+  let username = ''
+  const usernameEl = container.querySelector('a[href^="/@"]')
+  if (usernameEl) {
+    username = usernameEl.textContent.trim().replace('@', '')
+  }
+
+  if (username && title && !title.includes(username)) {
+    title = `@${username}: ${title}`
+  }
+
+  // Get thumbnail
+  let thumbnail = null
+  const video = container.querySelector('video')
+  if (video?.poster) thumbnail = video.poster
+
+  if (!thumbnail) {
+    const img = container.querySelector('img[src*="tiktokcdn"], img[src*="muscdn"]')
+    if (img) thumbnail = img.src
+  }
+
+  // Capture frame if needed
+  if (!thumbnail && video && video.readyState >= 2) {
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth || 720
+      canvas.height = video.videoHeight || 1280
+      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+      thumbnail = canvas.toDataURL('image/jpeg', 0.8)
+    } catch (e) {}
+  }
+
+  // Get views
+  let views = null
+  const viewsEl = container.querySelector('[data-e2e="video-views"], [class*="play-count"]')
+  if (viewsEl) views = parseViews(viewsEl.textContent)
+
+  return {
+    title: title.slice(0, 500) || 'TikTok Video',
+    thumbnail,
+    views,
+    platform: 'TIKTOK',
+    videoId,
+    url: videoUrl,
+  }
+}
+
+function extractYouTubeFromContainer(container) {
+  // Check if this is the main player or a thumbnail
+  const isMainPlayer = container.id === 'movie_player' || container.closest('#movie_player')
+
+  if (isMainPlayer) {
+    return extractYouTube()
+  }
+
+  // Extract from thumbnail/list item
+  let videoUrl = ''
+  let videoId = null
+  let title = ''
+  let thumbnail = null
+
+  const link = container.querySelector('a#thumbnail, a[href*="watch?v="], a[href*="/shorts/"]')
+  if (link) {
+    videoUrl = link.href
+    const match = videoUrl.match(/[?&]v=([a-zA-Z0-9_-]+)/) || videoUrl.match(/\/shorts\/([a-zA-Z0-9_-]+)/)
+    if (match) videoId = match[1]
+  }
+
+  const titleEl = container.querySelector('#video-title, #title, [id*="video-title"]')
+  if (titleEl) {
+    title = titleEl.textContent.trim()
+  }
+
+  if (videoId) {
+    thumbnail = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+  }
+
+  // Get views from metadata
+  let views = null
+  const metaEl = container.querySelector('#metadata-line span, .ytd-video-meta-block span')
+  if (metaEl) {
+    views = parseViews(metaEl.textContent)
+  }
+
+  const isShort = videoUrl.includes('/shorts/')
+
+  return {
+    title: title || 'YouTube Video',
+    thumbnail,
+    views,
+    platform: isShort ? 'YOUTUBE_SHORT' : 'YOUTUBE_LONG',
+    videoId,
+    url: videoUrl || window.location.href,
+  }
+}
+
+async function saveToFolio(data) {
+  try {
+    const res = await fetch(`${API_BASE}/api/collections`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        title: data.title,
+        url: data.url,
+        platform: data.platform,
+        thumbnail: data.thumbnail,
+        views: data.views,
+      }),
+    })
+
+    return res.ok
+  } catch (e) {
+    console.error('FOLIO save error:', e)
+    return false
+  }
+}
+
+function showToast(message, type = 'info') {
+  const toast = document.createElement('div')
+  toast.className = `folio-toast ${type}`
+  toast.textContent = message
+  document.body.appendChild(toast)
+
+  setTimeout(() => {
+    toast.remove()
+  }, 3000)
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+
+function formatViews(views) {
+  if (typeof views !== 'number') return views
+  if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M'
+  if (views >= 1000) return (views / 1000).toFixed(1) + 'K'
+  return views.toString()
+}
+
+// ============================================
+// Original functions for popup compatibility
+// ============================================
 
 function extractContent() {
   const hostname = window.location.hostname.replace('www.', '')
@@ -28,7 +573,6 @@ function extractContent() {
     case 'youtube.com':
       return extractYouTube()
     case 'tiktok.com':
-      // Always get fresh data for TikTok
       return extractTikTokCurrentVideo()
     case 'instagram.com':
       return extractInstagram()
@@ -43,52 +587,37 @@ function extractContent() {
 function initTikTokObserver() {
   console.log('FOLIO: TikTok observer initialized for', window.location.pathname)
 
-  // Track last detected video for comparison
   let lastDetectedUrl = null
 
-  // Function to check for video changes
   const checkForNewVideo = () => {
     const data = extractTikTokCurrentVideo()
-
-    // Use URL as primary identifier, fall back to videoId
     const currentIdentifier = data?.url || data?.videoId
 
     if (data && currentIdentifier !== lastDetectedUrl) {
       lastDetectedUrl = currentIdentifier
       lastVideoId = data.videoId
       currentVideoData = data
-      console.log('FOLIO: New TikTok video detected:')
-      console.log('  Title:', data.title?.slice(0, 60))
-      console.log('  ID:', data.videoId)
-      console.log('  URL:', data.url)
-      console.log('  Thumbnail:', data.thumbnail ? 'Yes' : 'No')
+      console.log('FOLIO: New TikTok video detected:', data.title?.slice(0, 60))
 
-      // Notify popup of new video (if open)
       chrome.runtime.sendMessage({
         type: 'VIDEO_CHANGED',
         data: data
-      }).catch(() => {
-        // Popup not open, ignore
-      })
+      }).catch(() => {})
     }
   }
 
-  // Check periodically
   setInterval(checkForNewVideo, 500)
 
-  // Also check on scroll events (with debounce)
   let scrollTimeout = null
   window.addEventListener('scroll', () => {
     if (scrollTimeout) clearTimeout(scrollTimeout)
     scrollTimeout = setTimeout(checkForNewVideo, 100)
   }, { passive: true })
 
-  // Check on URL changes (TikTok uses pushState)
   let lastUrl = window.location.href
   const urlObserver = new MutationObserver(() => {
     if (window.location.href !== lastUrl) {
       lastUrl = window.location.href
-      console.log('FOLIO: URL changed to', lastUrl)
       setTimeout(checkForNewVideo, 300)
     }
   })
@@ -96,13 +625,9 @@ function initTikTokObserver() {
 }
 
 function extractTikTokCurrentVideo() {
-  // Find the currently playing/visible video
   const videos = document.querySelectorAll('video')
   let currentVideo = null
   let currentContainer = null
-
-  // First priority: find the video that's most centered in viewport
-  // (Don't prioritize playing videos since they pause when popup is focused)
   let bestVideo = null
   let bestScore = -1
 
@@ -110,24 +635,16 @@ function extractTikTokCurrentVideo() {
     const rect = video.getBoundingClientRect()
     const windowHeight = window.innerHeight
 
-    // Skip videos that are too small or not visible
     if (rect.height < 100) continue
 
-    // Calculate how centered the video is (higher = better)
     const videoCenter = rect.top + rect.height / 2
     const viewportCenter = windowHeight / 2
     const centerOffset = Math.abs(videoCenter - viewportCenter)
     const centerScore = Math.max(0, 1 - (centerOffset / (windowHeight / 2)))
-
-    // Calculate visibility (how much of the video is on screen)
     const visibility = getVisibilityPercentage(video)
-
-    // Small bonus for playing videos, but not essential
     const playingBonus = !video.paused ? 0.1 : 0
 
-    // Videos must be at least 50% visible to be considered
     if (visibility > 0.5) {
-      // Heavily weight center position - the most centered video wins
       const score = (centerScore * 2) + visibility + playingBonus
       if (score > bestScore) {
         bestScore = score
@@ -141,105 +658,47 @@ function extractTikTokCurrentVideo() {
     currentContainer = findVideoContainer(currentVideo)
   }
 
-  // Extract video URL/ID from the page or container
   let videoUrl = window.location.href
   let videoId = null
 
-  // On For You page, URL often contains current video ID
   const urlVideoMatch = videoUrl.match(/\/video\/(\d+)/)
-  if (urlVideoMatch) {
-    videoId = urlVideoMatch[1]
-  }
+  if (urlVideoMatch) videoId = urlVideoMatch[1]
 
-  // Try to find video link in container as backup
   if (!videoId && currentContainer) {
     const link = currentContainer.querySelector('a[href*="/video/"]')
     if (link) {
       videoUrl = link.href
       const match = videoUrl.match(/\/video\/(\d+)/)
-      if (match) {
-        videoId = match[1]
-      }
+      if (match) videoId = match[1]
     }
   }
 
-  // Try data attributes that TikTok sometimes uses
-  if (!videoId && currentContainer) {
-    const dataId = currentContainer.getAttribute('data-video-id') ||
-                   currentContainer.querySelector('[data-video-id]')?.getAttribute('data-video-id')
-    if (dataId) {
-      videoId = dataId
-    }
-  }
-
-  // Get thumbnail - try multiple methods for TikTok
   let thumbnail = null
+  if (currentVideo?.poster) thumbnail = currentVideo.poster
 
-  // Method 1: Video poster attribute (most reliable)
-  if (currentVideo?.poster) {
-    thumbnail = currentVideo.poster
-  }
-
-  // Method 2: Look for image in the video container (TikTok CDN images)
   if (!thumbnail && currentContainer) {
     const img = currentContainer.querySelector('img[src*="tiktokcdn"], img[src*="muscdn"], img[src*="tiktok"]')
-    if (img && img.src) {
-      thumbnail = img.src
-    }
+    if (img) thumbnail = img.src
   }
 
-  // Method 3: og:image meta tag
   if (!thumbnail) {
     const ogImage = document.querySelector('meta[property="og:image"]')
-    if (ogImage) {
-      thumbnail = ogImage.getAttribute('content')
-    }
+    if (ogImage) thumbnail = ogImage.getAttribute('content')
   }
 
-  // Method 4: Any sizeable image in the container
-  if (!thumbnail && currentContainer) {
-    const imgs = currentContainer.querySelectorAll('img')
-    for (const img of imgs) {
-      // Look for images that are large enough to be thumbnails
-      if (img.src && !img.src.includes('avatar') && !img.src.includes('profile')) {
-        const width = img.width || img.naturalWidth || 0
-        const height = img.height || img.naturalHeight || 0
-        if (width > 50 || height > 50) {
-          thumbnail = img.src
-          break
-        }
-      }
-    }
-  }
-
-  // Method 5: Capture frame from video (works even when paused if video has data)
   if (!thumbnail && currentVideo && currentVideo.readyState >= 2) {
     try {
       const canvas = document.createElement('canvas')
       canvas.width = currentVideo.videoWidth || 720
       canvas.height = currentVideo.videoHeight || 1280
-      const ctx = canvas.getContext('2d')
-      ctx.drawImage(currentVideo, 0, 0, canvas.width, canvas.height)
+      canvas.getContext('2d').drawImage(currentVideo, 0, 0, canvas.width, canvas.height)
       thumbnail = canvas.toDataURL('image/jpeg', 0.8)
-    } catch (e) {
-      // Cross-origin or other error, skip
-    }
+    } catch (e) {}
   }
 
-  // Get title/description
   let title = ''
-
-  // Try to find description in the video container
   if (currentContainer) {
-    // Look for description text
-    const descSelectors = [
-      '[data-e2e="video-desc"]',
-      '[data-e2e="browse-video-desc"]',
-      '[class*="tiktok"][class*="DivContainer"] span[class*="SpanText"]',
-      '[class*="video-meta-caption"]',
-      '[class*="DivVideoInfoContainer"]',
-    ]
-
+    const descSelectors = ['[data-e2e="video-desc"]', '[data-e2e="browse-video-desc"]']
     for (const selector of descSelectors) {
       const el = currentContainer.querySelector(selector)
       if (el && el.textContent.trim().length > 3) {
@@ -248,70 +707,47 @@ function extractTikTokCurrentVideo() {
       }
     }
 
-    // Try finding any span/div with substantial text
     if (!title) {
       const textEls = currentContainer.querySelectorAll('span, div')
       for (const el of textEls) {
         const text = el.textContent.trim()
-        // Look for text that looks like a description (has hashtags or is long enough)
-        if (text.length > 20 || text.includes('#')) {
-          // Make sure it's not just numbers (like view counts)
-          if (!/^\d+[KMB]?$/.test(text) && !text.match(/^\d+:\d+$/)) {
-            title = text
-            break
-          }
+        if ((text.length > 20 || text.includes('#')) && !/^\d+[KMB]?$/.test(text)) {
+          title = text
+          break
         }
       }
     }
   }
 
-  // Fallback to meta or document title
   if (!title) {
     const ogTitle = document.querySelector('meta[property="og:title"]')
-    if (ogTitle) {
-      title = ogTitle.getAttribute('content') || ''
-    }
+    if (ogTitle) title = ogTitle.getAttribute('content') || ''
   }
 
   if (!title) {
-    title = document.title
-      .replace(' | TikTok', '')
-      .replace('TikTok - ', '')
-      .replace(' - TikTok', '')
-      .split(' | ')[0]
-      .trim()
+    title = document.title.replace(' | TikTok', '').replace('TikTok - ', '').split(' | ')[0].trim()
   }
 
-  // Get username
   let username = ''
   if (currentContainer) {
-    const usernameEl = currentContainer.querySelector('[data-e2e="video-author-uniqueid"], [class*="author"], a[href^="/@"]')
-    if (usernameEl) {
-      username = usernameEl.textContent.trim().replace('@', '')
-    }
+    const usernameEl = currentContainer.querySelector('a[href^="/@"]')
+    if (usernameEl) username = usernameEl.textContent.trim().replace('@', '')
   }
 
-  // Get view count
-  let views = null
-  if (currentContainer) {
-    const viewsEl = currentContainer.querySelector('[data-e2e="video-views"], [class*="play-count"], [class*="view"]')
-    if (viewsEl) {
-      views = parseViews(viewsEl.textContent)
-    }
-  }
-
-  // Get likes
-  let likes = null
-  if (currentContainer) {
-    const likesEl = currentContainer.querySelector('[data-e2e="like-count"], [data-e2e="browse-like-count"]')
-    if (likesEl) {
-      likes = parseViews(likesEl.textContent)
-    }
-  }
-
-  // Add username to title if we have it and it's not already there
   if (username && title && !title.includes(username)) {
     title = `@${username}: ${title}`
+  }
+
+  let views = null
+  if (currentContainer) {
+    const viewsEl = currentContainer.querySelector('[data-e2e="video-views"]')
+    if (viewsEl) views = parseViews(viewsEl.textContent)
+  }
+
+  let likes = null
+  if (currentContainer) {
+    const likesEl = currentContainer.querySelector('[data-e2e="like-count"]')
+    if (likesEl) likes = parseViews(likesEl.textContent)
   }
 
   return {
@@ -326,60 +762,25 @@ function extractTikTokCurrentVideo() {
 }
 
 function findVideoContainer(video) {
-  // Walk up the DOM to find a container that likely holds video info
   let el = video.parentElement
   let depth = 0
-  const maxDepth = 15
 
-  while (el && depth < maxDepth) {
-    // Check for various TikTok container patterns
-    const hasVideoDesc = el.querySelector('[data-e2e="video-desc"]') ||
-                         el.querySelector('[data-e2e="browse-video-desc"]')
-    const hasLikeCount = el.querySelector('[data-e2e="like-count"]') ||
-                         el.querySelector('[data-e2e="browse-like-count"]')
+  while (el && depth < 15) {
+    const hasVideoDesc = el.querySelector('[data-e2e="video-desc"]')
+    const hasLikeCount = el.querySelector('[data-e2e="like-count"]')
     const hasVideoLink = el.querySelector('a[href*="/video/"]')
     const hasUserLink = el.querySelector('a[href^="/@"]')
-    const hasInfoContainer = el.querySelector('[class*="DivVideoInfoContainer"]') ||
-                            el.querySelector('[class*="DivContentContainer"]')
 
-    // For You page specific: look for the main video item container
-    const isMainContainer = el.getAttribute('data-e2e') === 'recommend-list-item-container' ||
-                           el.classList.contains('swiper-slide') ||
-                           el.querySelector('[data-e2e="recommend-list-item-container"]')
-
-    if (hasVideoDesc || hasLikeCount || hasVideoLink || hasInfoContainer || isMainContainer) {
-      return el
-    }
-
-    // Also check if element contains substantial metadata (username + text)
-    if (hasUserLink && el.textContent.length > 50) {
-      return el
-    }
+    if (hasVideoDesc || hasLikeCount || hasVideoLink) return el
+    if (hasUserLink && el.textContent.length > 50) return el
 
     el = el.parentElement
     depth++
   }
 
-  // Fallback: return a larger parent that likely contains the video card
   el = video.parentElement
-  for (let i = 0; i < 8 && el; i++) {
-    el = el.parentElement
-  }
+  for (let i = 0; i < 8 && el; i++) el = el.parentElement
   return el
-}
-
-function isElementInViewport(el) {
-  const rect = el.getBoundingClientRect()
-  const windowHeight = window.innerHeight
-  const windowWidth = window.innerWidth
-
-  return (
-    rect.top < windowHeight &&
-    rect.bottom > 0 &&
-    rect.left < windowWidth &&
-    rect.right > 0 &&
-    rect.height > 100
-  )
 }
 
 function getVisibilityPercentage(el) {
@@ -390,9 +791,7 @@ function getVisibilityPercentage(el) {
 
   const visibleTop = Math.max(0, rect.top)
   const visibleBottom = Math.min(windowHeight, rect.bottom)
-  const visibleHeight = visibleBottom - visibleTop
-
-  return visibleHeight / rect.height
+  return (visibleBottom - visibleTop) / rect.height
 }
 
 function extractYouTube() {
@@ -409,14 +808,7 @@ function extractYouTube() {
   }
 
   let title = ''
-  const titleSelectors = [
-    'h1.ytd-video-primary-info-renderer',
-    'h1.ytd-watch-metadata yt-formatted-string',
-    'h1.ytd-watch-metadata',
-    '#title h1',
-    '[itemprop="name"]'
-  ]
-
+  const titleSelectors = ['h1.ytd-video-primary-info-renderer', 'h1.ytd-watch-metadata', '#title h1']
   for (const selector of titleSelectors) {
     const el = document.querySelector(selector)
     if (el && el.textContent.trim()) {
@@ -424,29 +816,13 @@ function extractYouTube() {
       break
     }
   }
+  if (!title) title = document.title.replace(' - YouTube', '').trim()
 
-  if (!title) {
-    title = document.title.replace(' - YouTube', '').trim()
-  }
-
-  const thumbnail = videoId
-    ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
-    : null
+  const thumbnail = videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : null
 
   let views = null
-  const viewSelectors = [
-    '#count .ytd-video-view-count-renderer',
-    '.ytd-video-view-count-renderer',
-    '[itemprop="interactionCount"]'
-  ]
-
-  for (const selector of viewSelectors) {
-    const el = document.querySelector(selector)
-    if (el) {
-      views = parseViews(el.textContent || el.getAttribute('content'))
-      if (views) break
-    }
-  }
+  const viewEl = document.querySelector('.ytd-video-view-count-renderer')
+  if (viewEl) views = parseViews(viewEl.textContent)
 
   return {
     title,
@@ -454,32 +830,20 @@ function extractYouTube() {
     views,
     engagement: null,
     platform: isShort ? 'YOUTUBE_SHORT' : 'YOUTUBE_LONG',
+    videoId,
+    url,
   }
 }
 
 function extractInstagram() {
   let title = ''
   const ogTitle = document.querySelector('meta[property="og:title"]')
-  if (ogTitle) {
-    title = ogTitle.getAttribute('content') || ''
-  }
-
-  if (!title) {
-    title = document.title.replace(' | Instagram', '').trim()
-  }
+  if (ogTitle) title = ogTitle.getAttribute('content') || ''
+  if (!title) title = document.title.replace(' | Instagram', '').trim()
 
   let thumbnail = null
   const metaImage = document.querySelector('meta[property="og:image"]')
-  if (metaImage) {
-    thumbnail = metaImage.getAttribute('content')
-  }
-
-  if (!thumbnail) {
-    const video = document.querySelector('video')
-    if (video && video.poster) {
-      thumbnail = video.poster
-    }
-  }
+  if (metaImage) thumbnail = metaImage.getAttribute('content')
 
   return {
     title: title.slice(0, 300),
@@ -487,39 +851,19 @@ function extractInstagram() {
     views: null,
     engagement: null,
     platform: 'INSTAGRAM_REEL',
+    url: window.location.href,
   }
 }
 
 function extractTwitter() {
   let title = ''
   const tweetEl = document.querySelector('[data-testid="tweetText"]')
-  if (tweetEl) {
-    title = tweetEl.textContent.trim()
-  }
-
-  if (!title) {
-    title = document.title.replace(' / X', '').replace(' / Twitter', '').trim()
-  }
+  if (tweetEl) title = tweetEl.textContent.trim()
+  if (!title) title = document.title.replace(' / X', '').trim()
 
   let thumbnail = null
   const imgEl = document.querySelector('[data-testid="tweetPhoto"] img')
-  if (imgEl) {
-    thumbnail = imgEl.src
-  }
-
-  if (!thumbnail) {
-    const videoEl = document.querySelector('video')
-    if (videoEl && videoEl.poster) {
-      thumbnail = videoEl.poster
-    }
-  }
-
-  if (!thumbnail) {
-    const metaImage = document.querySelector('meta[property="og:image"]')
-    if (metaImage) {
-      thumbnail = metaImage.getAttribute('content')
-    }
-  }
+  if (imgEl) thumbnail = imgEl.src
 
   return {
     title: title.slice(0, 280),
@@ -527,33 +871,24 @@ function extractTwitter() {
     views: null,
     engagement: null,
     platform: 'TWITTER',
+    url: window.location.href,
   }
 }
 
 function parseViews(text) {
   if (!text) return null
-
   const cleaned = text.toLowerCase().replace(/[,\s]/g, '').replace('views', '').replace('view', '')
   const match = cleaned.match(/([\d.]+)([kmb]?)/)
-
   if (!match) return null
 
   let num = parseFloat(match[1])
   const suffix = match[2]
 
-  switch (suffix) {
-    case 'k':
-      num *= 1000
-      break
-    case 'm':
-      num *= 1000000
-      break
-    case 'b':
-      num *= 1000000000
-      break
-  }
+  if (suffix === 'k') num *= 1000
+  else if (suffix === 'm') num *= 1000000
+  else if (suffix === 'b') num *= 1000000000
 
   return Math.round(num)
 }
 
-console.log('FOLIO content script loaded for:', window.location.hostname)
+console.log('FOLIO content script loaded with hover overlay for:', window.location.hostname)
