@@ -23,10 +23,16 @@ export default function GenerateInterface({
   const [variants, setVariants] = useState<GeneratedVariant[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [mode, setMode] = useState<'generate' | 'randomize'>('generate')
 
   const handleGenerate = async () => {
-    if (!topic.trim()) {
+    if (mode === 'generate' && !topic.trim()) {
       setError('Please enter a topic')
+      return
+    }
+
+    if (mode === 'randomize' && selectedReferences.length === 0 && collections.length === 0) {
+      setError('Save some content to your collection first')
       return
     }
 
@@ -38,10 +44,11 @@ export default function GenerateInterface({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          topic,
+          topic: mode === 'generate' ? topic : undefined,
           platform,
           referenceItems: selectedReferences.length > 0 ? selectedReferences : undefined,
           count: 10,
+          mode,
         }),
       })
 
@@ -71,19 +78,70 @@ export default function GenerateInterface({
       {/* Left Column - Input */}
       <div className="w-1/2 border-r border-[var(--folio-border)] p-8 overflow-auto">
         <div className="max-w-md space-y-8">
-          {/* Topic Input */}
+          {/* Mode Toggle */}
           <div>
             <label className="block text-xs uppercase tracking-widest text-[var(--folio-text-secondary)] mb-2">
-              Topic / Concept
+              Mode
             </label>
-            <textarea
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g., Why most filmmakers fail in their first year"
-              rows={4}
-              className="resize-none"
-            />
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setMode('generate')}
+                className={`
+                  px-4 py-3 text-sm text-left border
+                  ${mode === 'generate'
+                    ? 'border-[var(--folio-black)] bg-[var(--folio-offwhite)]'
+                    : 'border-[var(--folio-border)] hover:border-[var(--folio-black)]'
+                  }
+                `}
+              >
+                <div className="font-medium">Generate</div>
+                <div className="text-xs text-[var(--folio-text-muted)] mt-1">
+                  Variants for a topic
+                </div>
+              </button>
+              <button
+                onClick={() => setMode('randomize')}
+                className={`
+                  px-4 py-3 text-sm text-left border
+                  ${mode === 'randomize'
+                    ? 'border-[var(--folio-black)] bg-[var(--folio-offwhite)]'
+                    : 'border-[var(--folio-border)] hover:border-[var(--folio-black)]'
+                  }
+                `}
+              >
+                <div className="font-medium">Randomize</div>
+                <div className="text-xs text-[var(--folio-text-muted)] mt-1">
+                  New hooks from taste
+                </div>
+              </button>
+            </div>
           </div>
+
+          {/* Topic Input - only show in generate mode */}
+          {mode === 'generate' && (
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-[var(--folio-text-secondary)] mb-2">
+                Topic / Concept
+              </label>
+              <textarea
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="e.g., Why most filmmakers fail in their first year"
+                rows={4}
+                className="resize-none"
+              />
+            </div>
+          )}
+
+          {/* Randomize explanation */}
+          {mode === 'randomize' && (
+            <div className="p-4 bg-[var(--folio-offwhite)] border border-[var(--folio-border)]">
+              <p className="text-sm text-[var(--folio-text-secondary)]">
+                Generate completely new hook ideas based on your taste profile and selected references.
+                The AI will analyze patterns and create original concepts you haven&apos;t thought of yet.
+              </p>
+            </div>
+          )}
 
           {/* Platform Selector */}
           <div>
@@ -113,10 +171,12 @@ export default function GenerateInterface({
           {collections.length > 0 && (
             <div>
               <label className="block text-xs uppercase tracking-widest text-[var(--folio-text-secondary)] mb-2">
-                Reference Items (Optional)
+                Reference Items {mode === 'generate' ? '(Optional)' : '(Recommended)'}
               </label>
               <p className="text-xs text-[var(--folio-text-muted)] mb-3">
-                Select items from your collection to influence generation
+                {mode === 'randomize'
+                  ? 'Select items to influence the AI. Leave empty to use your recent saves.'
+                  : 'Select items from your collection to influence generation'}
               </p>
               <div className="max-h-48 overflow-auto border border-[var(--folio-border)]">
                 {collections.slice(0, 10).map((item) => (
@@ -182,10 +242,14 @@ export default function GenerateInterface({
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
-            disabled={loading || !topic.trim()}
+            disabled={loading || (mode === 'generate' && !topic.trim())}
             className="btn btn-primary w-full"
           >
-            {loading ? 'Generating...' : 'Generate Variants'}
+            {loading
+              ? 'Generating...'
+              : mode === 'randomize'
+                ? 'Randomize New Hooks'
+                : 'Generate Variants'}
           </button>
         </div>
       </div>
