@@ -1,7 +1,7 @@
 // FOLIO Content Script
 // Extracts content metadata and provides hover overlay for quick save
 
-const API_BASE = 'http://localhost:3000'
+const API_BASE = 'http://localhost:3003'
 
 // Store current video data
 let currentVideoData = null
@@ -324,25 +324,23 @@ function createOverlayButton(container, platform) {
 
     overlay.appendChild(expanded)
 
-    // Handle actions
-    expanded.querySelector('[data-action="save"]').addEventListener('click', async () => {
-      const saveBtn = expanded.querySelector('[data-action="save"]')
-      saveBtn.textContent = 'Saving...'
-      saveBtn.disabled = true
+    // Handle actions - open save page (avoids CORS/auth issues with direct API calls)
+    expanded.querySelector('[data-action="save"]').addEventListener('click', () => {
+      const params = new URLSearchParams({
+        title: data.title || '',
+        url: data.url || window.location.href,
+        platform: data.platform || '',
+        ...(data.thumbnail && { thumbnail: data.thumbnail }),
+        ...(data.views && { views: data.views.toString() }),
+      })
 
-      const success = await saveToFolio(data)
+      // Open save page in new tab
+      window.open(`${API_BASE}/save?${params.toString()}`, '_blank')
 
-      if (success) {
-        btn.classList.add('saved')
-        btn.innerHTML = '<span class="folio-logo">FOLIO</span> ✓ Saved'
-        showToast('Saved to collection', 'success')
-        expanded.remove()
-        expanded = null
-      } else {
-        saveBtn.textContent = 'Save to Collection'
-        saveBtn.disabled = false
-        showToast('Save failed - check if logged in', 'error')
-      }
+      btn.classList.add('saved')
+      btn.innerHTML = '<span class="folio-logo">FOLIO</span> ✓ Opened'
+      expanded.remove()
+      expanded = null
     })
 
     expanded.querySelector('[data-action="close"]').addEventListener('click', () => {

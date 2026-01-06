@@ -4,13 +4,29 @@ import { prisma } from '@/lib/db'
 import { PLATFORMS, type Platform } from '@/lib/types'
 import { getYouTubeVideoStats, extractYouTubeVideoId } from '@/lib/services/youtubeApi'
 
+// CORS headers for extension - must return specific origin when credentials: include
+function getCorsHeaders(request?: Request) {
+  const origin = request?.headers.get('origin') || 'http://localhost:3003'
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Credentials': 'true',
+  }
+}
+
+// OPTIONS - Handle preflight
+export async function OPTIONS(request: Request) {
+  return NextResponse.json({}, { headers: getCorsHeaders(request) })
+}
+
 // GET - List user's collection
 export async function GET(request: Request) {
   try {
     const session = await auth()
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: getCorsHeaders(request) })
     }
 
     const { searchParams } = new URL(request.url)
@@ -47,12 +63,12 @@ export async function GET(request: Request) {
       total,
       limit,
       offset,
-    })
+    }, { headers: getCorsHeaders(request) })
   } catch (error) {
     console.error('Error fetching collections:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500, headers: getCorsHeaders(request) }
     )
   }
 }
@@ -63,7 +79,7 @@ export async function POST(request: Request) {
     const session = await auth()
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: getCorsHeaders(request) })
     }
 
     const body = await request.json()
@@ -72,14 +88,14 @@ export async function POST(request: Request) {
     if (!title || !platform) {
       return NextResponse.json(
         { error: 'Title and platform are required' },
-        { status: 400 }
+        { status: 400, headers: getCorsHeaders(request) }
       )
     }
 
     if (!Object.values(PLATFORMS).includes(platform)) {
       return NextResponse.json(
         { error: 'Invalid platform' },
-        { status: 400 }
+        { status: 400, headers: getCorsHeaders(request) }
       )
     }
 
@@ -152,12 +168,12 @@ export async function POST(request: Request) {
       },
     })
 
-    return NextResponse.json(collection, { status: 201 })
+    return NextResponse.json(collection, { status: 201, headers: getCorsHeaders(request) })
   } catch (error) {
     console.error('Error creating collection:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500, headers: getCorsHeaders(request) }
     )
   }
 }
