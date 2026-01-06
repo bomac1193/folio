@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { title, url, platform, thumbnail, views, engagement, notes, tags } = body
+    const { title, url, platform, contentType, thumbnail, views, engagement, notes, tags } = body
 
     if (!title || !platform) {
       return NextResponse.json(
@@ -143,6 +143,7 @@ export async function POST(request: Request) {
         url: url || null,
         videoId,
         platform,
+        contentType: contentType || null,
         thumbnail: thumbnail || null,
         // Use API metrics if available, otherwise use passed values
         views: initialMetrics.views ?? (views ? parseInt(views) : null),

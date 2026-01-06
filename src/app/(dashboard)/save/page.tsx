@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { PLATFORM_LABELS, type Platform } from '@/lib/types'
+import { PLATFORM_LABELS, CONTENT_TYPE_LABELS, type Platform, type ContentType } from '@/lib/types'
 
 export default function SavePage() {
   const searchParams = useSearchParams()
@@ -14,6 +14,7 @@ export default function SavePage() {
   const title = searchParams.get('title') || ''
   const url = searchParams.get('url') || ''
   const platform = searchParams.get('platform') as Platform || 'YOUTUBE_LONG'
+  const contentType = searchParams.get('contentType') as ContentType || 'VIDEO'
   const thumbnail = searchParams.get('thumbnail') || ''
   const views = searchParams.get('views') || ''
   const notes = searchParams.get('notes') || ''
@@ -36,6 +37,7 @@ export default function SavePage() {
           title,
           url,
           platform,
+          contentType,
           thumbnail: thumbnail || null,
           views: views ? parseInt(views) : null,
           notes: notes || null,
@@ -112,7 +114,7 @@ export default function SavePage() {
             <p className="text-sm">{title}</p>
           </div>
 
-          {/* Platform & URL */}
+          {/* Platform & Content Type */}
           <div className="flex gap-8 mb-4">
             <div>
               <label className="block text-xs uppercase tracking-widest text-[var(--folio-text-muted)] mb-2">
@@ -120,6 +122,21 @@ export default function SavePage() {
               </label>
               <span className="platform-badge">
                 {PLATFORM_LABELS[platform] || platform}
+              </span>
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-[var(--folio-text-muted)] mb-2">
+                Type
+              </label>
+              <span className={`text-xs px-2 py-1 ${
+                contentType === 'LIVE_STREAM' ? 'bg-red-100 text-red-700' :
+                contentType === 'CLIP' ? 'bg-purple-100 text-purple-700' :
+                contentType === 'TRACK' ? 'bg-orange-100 text-orange-700' :
+                contentType === 'MIX' ? 'bg-blue-100 text-blue-700' :
+                contentType === 'RELEASE' ? 'bg-green-100 text-green-700' :
+                'bg-gray-100 text-gray-700'
+              }`}>
+                {CONTENT_TYPE_LABELS[contentType] || contentType}
               </span>
             </div>
             {views && (

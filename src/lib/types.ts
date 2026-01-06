@@ -24,6 +24,29 @@ export const ITEM_TYPES = {
 
 export type ItemType = (typeof ITEM_TYPES)[keyof typeof ITEM_TYPES]
 
+// Content type enum (live vs recorded content)
+export const CONTENT_TYPES = {
+  VIDEO: 'VIDEO',
+  LIVE_STREAM: 'LIVE_STREAM',
+  CLIP: 'CLIP',
+  TRACK: 'TRACK',
+  MIX: 'MIX',
+  RELEASE: 'RELEASE',
+  POST: 'POST',
+} as const
+
+export type ContentType = (typeof CONTENT_TYPES)[keyof typeof CONTENT_TYPES]
+
+export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
+  VIDEO: 'Video',
+  LIVE_STREAM: 'Live',
+  CLIP: 'Clip',
+  TRACK: 'Track',
+  MIX: 'Mix',
+  RELEASE: 'Release',
+  POST: 'Post',
+}
+
 // Performance DNA structure
 export interface PerformanceDNA {
   hooks: string[]

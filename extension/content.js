@@ -252,6 +252,7 @@ function initYouTubeShortsOverlay() {
         title: data.title || '',
         url: data.url || window.location.href,
         platform: data.platform || 'YOUTUBE_SHORT',
+        contentType: 'VIDEO',
         ...(data.thumbnail && { thumbnail: data.thumbnail }),
         ...(data.views && { views: data.views.toString() }),
       })
@@ -343,10 +344,23 @@ function initMusicPlatformOverlay(platform) {
       return
     }
 
+    // Determine content type based on platform
+    let contentType = data.contentType || 'VIDEO'
+    if (platform === 'twitch') {
+      contentType = data.isLive ? 'LIVE_STREAM' : (data.url?.includes('/clip/') ? 'CLIP' : 'VIDEO')
+    } else if (platform === 'soundcloud') {
+      contentType = 'TRACK'
+    } else if (platform === 'bandcamp') {
+      contentType = 'RELEASE'
+    } else if (platform === 'mixcloud') {
+      contentType = 'MIX'
+    }
+
     const params = new URLSearchParams({
       title: data.title || '',
       url: data.url || window.location.href,
       platform: data.platform || platform.toUpperCase(),
+      contentType,
       ...(data.thumbnail && { thumbnail: data.thumbnail }),
       ...(data.views && { views: data.views.toString() }),
     })
@@ -393,6 +407,7 @@ function initTikTokFixedOverlay() {
       title: data.title || '',
       url: data.url || window.location.href,
       platform: data.platform || 'TIKTOK',
+      contentType: 'VIDEO',
       ...(data.thumbnail && { thumbnail: data.thumbnail }),
       ...(data.views && { views: data.views.toString() }),
     })
@@ -526,10 +541,24 @@ function createOverlayButton(container, platform) {
 
     // Handle actions - open save page (avoids CORS/auth issues with direct API calls)
     expanded.querySelector('[data-action="save"]').addEventListener('click', () => {
+      // Determine content type based on platform and URL
+      let contentType = 'VIDEO'
+      const platformLower = data.platform?.toLowerCase() || ''
+      if (platformLower === 'twitch') {
+        contentType = data.isLive ? 'LIVE_STREAM' : (data.url?.includes('/clip/') ? 'CLIP' : 'VIDEO')
+      } else if (platformLower === 'soundcloud') {
+        contentType = 'TRACK'
+      } else if (platformLower === 'bandcamp') {
+        contentType = 'RELEASE'
+      } else if (platformLower === 'mixcloud') {
+        contentType = 'MIX'
+      }
+
       const params = new URLSearchParams({
         title: data.title || '',
         url: data.url || window.location.href,
         platform: data.platform || '',
+        contentType,
         ...(data.thumbnail && { thumbnail: data.thumbnail }),
         ...(data.views && { views: data.views.toString() }),
       })

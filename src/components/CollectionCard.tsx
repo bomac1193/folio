@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import type { Collection } from '@prisma/client'
-import { PLATFORM_LABELS, type Platform, type PerformanceDNA, type AestheticDNA } from '@/lib/types'
+import { PLATFORM_LABELS, CONTENT_TYPE_LABELS, type Platform, type ContentType, type PerformanceDNA, type AestheticDNA } from '@/lib/types'
 
 interface CollectionCardProps {
   collection: Collection
@@ -49,11 +49,24 @@ export default function CollectionCard({ collection }: CollectionCardProps) {
           </div>
         )}
 
-        {/* Platform badge */}
-        <div className="absolute top-3 left-3">
+        {/* Platform & Content Type badges */}
+        <div className="absolute top-3 left-3 flex gap-2">
           <span className="platform-badge">
             {PLATFORM_LABELS[collection.platform as Platform]}
           </span>
+          {collection.contentType && collection.contentType !== 'VIDEO' && (
+            <span className={`text-[10px] px-2 py-0.5 font-medium uppercase tracking-wider ${
+              collection.contentType === 'LIVE_STREAM' ? 'bg-red-500 text-white' :
+              collection.contentType === 'CLIP' ? 'bg-purple-500 text-white' :
+              collection.contentType === 'TRACK' ? 'bg-orange-500 text-white' :
+              collection.contentType === 'MIX' ? 'bg-blue-500 text-white' :
+              collection.contentType === 'RELEASE' ? 'bg-green-500 text-white' :
+              collection.contentType === 'POST' ? 'bg-gray-500 text-white' :
+              'bg-gray-500 text-white'
+            }`}>
+              {CONTENT_TYPE_LABELS[collection.contentType as ContentType] || collection.contentType}
+            </span>
+          )}
         </div>
 
         {/* Hover overlay with metrics and DNA summary */}

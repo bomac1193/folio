@@ -27,12 +27,13 @@ model Collection {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  title     String
-  url       String?
-  videoId   String?  // Platform-specific video ID for API lookups
-  platform  String   // Platform enum: TIKTOK, YOUTUBE_SHORT, INSTAGRAM_REEL, YOUTUBE_LONG, TWITTER, LINKEDIN
-  thumbnail String?
-  savedAt   DateTime @default(now())
+  title       String
+  url         String?
+  videoId     String?  // Platform-specific video ID for API lookups
+  platform    String   // Platform enum: TIKTOK, YOUTUBE_SHORT, INSTAGRAM_REEL, YOUTUBE_LONG, TWITTER, LINKEDIN, TWITCH, SOUNDCLOUD, BANDCAMP, MIXCLOUD
+  contentType String?  // Content type: LIVE_STREAM, VIDEO, CLIP, TRACK, MIX, RELEASE, POST
+  thumbnail   String?
+  savedAt     DateTime @default(now())
 
   // Initial metrics (when first saved)
   initialViews    Int?
