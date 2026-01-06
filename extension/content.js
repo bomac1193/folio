@@ -1210,79 +1210,67 @@ function extractTwitch() {
     title = `${title} [${game}]`
   }
 
-  // Get thumbnail - different strategies for live, VOD, and clips
+  // Get thumbnail - capture from video element (most reliable for all Twitch content)
   let thumbnail = null
 
-  if (isVOD) {
-    // For VODs, try to get thumbnail from the video info card or preview
-    const vodThumbSelectors = [
-      // VOD preview image in video player
-      '.video-player__default-player img[src*="vods"]',
-      // Poster image
-      'video[poster]',
-      // Video info card thumbnail
-      '[class*="video-info"] img',
-      // Preview storyboard
-      'img[src*="storyboards"]',
-    ]
+  // Helper to check if URL is a valid Twitch thumbnail (not profile pic)
+  const isValidThumbnail = (url) => {
+    if (!url) return false
+    if (url.includes('profile_image') || url.includes('jtv_user_pictures')) return false
+    if (url.includes('cf_vods') || url.includes('s3_vods') || url.includes('clips-media-assets')) return true
+    if (url.includes('previews-ttv')) return true
+    return false
+  }
 
-    for (const selector of vodThumbSelectors) {
-      const el = document.querySelector(selector)
-      if (el) {
-        thumbnail = el.src || el.getAttribute('poster')
-        if (thumbnail && !thumbnail.includes('profile_image')) break
-      }
+  // Strategy 1: Try to capture frame from video element (works for live, VOD, clips)
+  const videoEl = document.querySelector('video')
+  if (videoEl && videoEl.readyState >= 2) {
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = videoEl.videoWidth || 1280
+      canvas.height = videoEl.videoHeight || 720
+      canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height)
+      thumbnail = canvas.toDataURL('image/jpeg', 0.8)
+    } catch (e) {
+      // CORS might block this
+      console.log('FOLIO: Could not capture video frame:', e.message)
     }
+  }
 
-    // Construct VOD thumbnail URL from video ID if we have it
-    if (!thumbnail) {
-      const videoIdMatch = url.match(/\/videos\/(\d+)/)
-      if (videoIdMatch) {
-        // Twitch VOD thumbnail URL pattern - use the preview API
-        thumbnail = `https://static-cdn.jtvnw.net/cf_vods/dgeft87wbj63p/thumb/${videoIdMatch[1]}/thumb0-640x360.jpg`
-      }
-    }
-  } else if (isClip) {
-    // For clips, try clip-specific selectors
-    const clipThumbSelectors = [
-      'img[src*="clips-media-assets"]',
-      '.clip-thumbnail img',
-      '[class*="clip"] img[src*="twitch"]',
-    ]
-
-    for (const selector of clipThumbSelectors) {
-      const el = document.querySelector(selector)
-      if (el && el.src && !el.src.includes('profile_image')) {
-        thumbnail = el.src
+  // Strategy 2: Search all images on page for valid thumbnail URLs
+  if (!thumbnail) {
+    const allImages = document.querySelectorAll('img[src]')
+    for (const img of allImages) {
+      if (isValidThumbnail(img.src)) {
+        thumbnail = img.src
         break
-      }
-    }
-  } else if (isLive) {
-    // Try to get live preview image from video element
-    const previewEl = document.querySelector('video')
-    if (previewEl) {
-      try {
-        const canvas = document.createElement('canvas')
-        canvas.width = previewEl.videoWidth || 1280
-        canvas.height = previewEl.videoHeight || 720
-        canvas.getContext('2d').drawImage(previewEl, 0, 0, canvas.width, canvas.height)
-        thumbnail = canvas.toDataURL('image/jpeg', 0.8)
-      } catch (e) {
-        // CORS might block this
       }
     }
   }
 
-  // Fallback to og:image, but ONLY if it's not a profile image
+  // Strategy 3: Check video poster attribute
+  if (!thumbnail && videoEl) {
+    const poster = videoEl.getAttribute('poster')
+    if (isValidThumbnail(poster)) {
+      thumbnail = poster
+    }
+  }
+
+  // Strategy 4: Check og:image but only if it's a valid thumbnail
   if (!thumbnail) {
     const ogImage = document.querySelector('meta[property="og:image"]')
     if (ogImage) {
       const ogUrl = ogImage.getAttribute('content')
-      // Skip if it's a profile image
-      if (ogUrl && !ogUrl.includes('profile_image') && !ogUrl.includes('jtv_user_pictures')) {
+      if (isValidThumbnail(ogUrl)) {
         thumbnail = ogUrl
       }
     }
+  }
+
+  // Strategy 5: For live streams, construct preview URL from channel name
+  if (!thumbnail && isLive && channel) {
+    // Twitch live preview URL pattern
+    thumbnail = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${channel.toLowerCase()}-640x360.jpg`
   }
 
   // Get live viewer count
