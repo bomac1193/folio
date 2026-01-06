@@ -1092,15 +1092,27 @@ function extractTwitch() {
   const url = window.location.href
   const isClip = url.includes('/clip/')
   const isVOD = url.includes('/videos/')
+  const isLive = !isClip && !isVOD
 
   let title = ''
   // Try different title selectors for clips, VODs, and live streams
   const titleSelectors = [
-    '[data-a-target="stream-title"]',           // Live stream title
-    'h2[data-a-target="clip-title"]',           // Clip title
-    '[data-test-selector="clip-title"]',        // Alt clip title
-    'h2.tw-title',                              // Generic title
-    '[data-a-target="video-title"]',            // VOD title
+    // Live stream titles (2024+ Twitch UI)
+    '[data-a-target="stream-title"]',
+    'h2[data-a-target="stream-title"]',
+    'p[data-a-target="stream-title"]',
+    '[class*="CoreText"][class*="stream-info"]',
+    // Channel info area
+    '.channel-info-content [data-a-target="stream-title"]',
+    // Clip titles
+    'h2[data-a-target="clip-title"]',
+    '[data-test-selector="clip-title"]',
+    // VOD titles
+    '[data-a-target="video-title"]',
+    'h2.tw-title',
+    // Fallback - any prominent heading
+    '[class*="stream-info"] h1',
+    '[class*="stream-info"] h2',
   ]
 
   for (const selector of titleSelectors) {
@@ -1115,34 +1127,105 @@ function extractTwitch() {
     title = document.title.replace(' - Twitch', '').trim()
   }
 
-  // Get channel name
+  // Get channel/streamer name
   let channel = ''
-  const channelEl = document.querySelector('[data-a-target="player-info-title"]') ||
-                    document.querySelector('.channel-info-content h1') ||
-                    document.querySelector('[data-a-target="stream-game-link"]')?.closest('div')?.querySelector('a')
-  if (channelEl) channel = channelEl.textContent.trim()
+  const channelSelectors = [
+    // Live stream channel name
+    '[data-a-target="player-info-title"]',
+    'h1[data-a-target="channel-header-name"]',
+    '.channel-info-content h1',
+    '[class*="CoreText"][class*="channel-header"]',
+    // From the page header
+    '[data-a-target="user-display-name"]',
+    // Clip/VOD channel
+    '[data-a-target="clip-channel-name"]',
+  ]
 
-  // Extract from URL if needed
+  for (const selector of channelSelectors) {
+    const el = document.querySelector(selector)
+    if (el && el.textContent.trim()) {
+      channel = el.textContent.trim()
+      break
+    }
+  }
+
+  // Extract channel from URL if needed
   if (!channel) {
     const pathMatch = url.match(/twitch\.tv\/([^\/\?]+)/)
-    if (pathMatch && !['videos', 'clip', 'directory'].includes(pathMatch[1])) {
+    if (pathMatch && !['videos', 'clip', 'directory', 'search', 'settings'].includes(pathMatch[1])) {
       channel = pathMatch[1]
     }
   }
 
+  // Get game/category being streamed
+  let game = ''
+  const gameSelectors = [
+    '[data-a-target="stream-game-link"]',
+    '[class*="stream-info"] a[href*="/directory/game/"]',
+    '[class*="CoreText"] a[data-a-target*="game"]',
+  ]
+
+  for (const selector of gameSelectors) {
+    const el = document.querySelector(selector)
+    if (el && el.textContent.trim()) {
+      game = el.textContent.trim()
+      break
+    }
+  }
+
+  // Build title with channel and game
   if (channel && title && !title.toLowerCase().includes(channel.toLowerCase())) {
     title = `${channel}: ${title}`
   }
+  if (game && !title.includes(game)) {
+    title = `${title} [${game}]`
+  }
 
-  // Get thumbnail
+  // Get thumbnail - try video preview first for live streams
   let thumbnail = null
-  const ogImage = document.querySelector('meta[property="og:image"]')
-  if (ogImage) thumbnail = ogImage.getAttribute('content')
 
-  // Get viewers
+  if (isLive) {
+    // Try to get live preview image
+    const previewEl = document.querySelector('video')
+    if (previewEl) {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = previewEl.videoWidth || 1280
+        canvas.height = previewEl.videoHeight || 720
+        canvas.getContext('2d').drawImage(previewEl, 0, 0, canvas.width, canvas.height)
+        thumbnail = canvas.toDataURL('image/jpeg', 0.8)
+      } catch (e) {
+        // CORS might block this
+      }
+    }
+  }
+
+  // Fallback to og:image
+  if (!thumbnail) {
+    const ogImage = document.querySelector('meta[property="og:image"]')
+    if (ogImage) thumbnail = ogImage.getAttribute('content')
+  }
+
+  // Get live viewer count
   let views = null
-  const viewerEl = document.querySelector('[data-a-target="animated-channel-viewers-count"]')
-  if (viewerEl) views = parseViews(viewerEl.textContent)
+  const viewerSelectors = [
+    '[data-a-target="animated-channel-viewers-count"]',
+    '[class*="ScAnimatedNumber"]',
+    '[aria-label*="viewer"]',
+  ]
+
+  for (const selector of viewerSelectors) {
+    const el = document.querySelector(selector)
+    if (el && el.textContent.trim()) {
+      views = parseViews(el.textContent)
+      if (views) break
+    }
+  }
+
+  // Determine if currently live
+  const isCurrentlyLive = document.querySelector('[data-a-target="animated-channel-viewers-count"]') ||
+                          document.querySelector('[class*="live-indicator"]') ||
+                          document.querySelector('[aria-label*="Live"]')
 
   return {
     title: title.slice(0, 500) || 'Twitch Stream',
@@ -1151,6 +1234,7 @@ function extractTwitch() {
     engagement: null,
     platform: 'TWITCH',
     url,
+    isLive: !!isCurrentlyLive,
   }
 }
 
