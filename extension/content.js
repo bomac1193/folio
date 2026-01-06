@@ -33,6 +33,7 @@ if (hostname === 'tiktok.com') {
   initHoverOverlay('tiktok')
 } else if (hostname === 'youtube.com') {
   initHoverOverlay('youtube')
+  initYouTubeShortsOverlay() // Fixed overlay for Shorts
 } else if (hostname === 'instagram.com') {
   initHoverOverlay('instagram')
 } else if (hostname === 'twitter.com' || hostname === 'x.com') {
@@ -206,6 +207,89 @@ function injectStyles() {
   document.head.appendChild(style)
 }
 
+// Fixed overlay for YouTube Shorts
+function initYouTubeShortsOverlay() {
+  console.log('FOLIO: YouTube Shorts overlay initialized')
+
+  let overlay = null
+
+  const createOverlay = () => {
+    if (overlay) return
+
+    overlay = document.createElement('div')
+    overlay.id = 'folio-shorts-fixed'
+    overlay.innerHTML = `
+      <button class="folio-save-btn" id="folio-shorts-save">
+        <span class="folio-logo">FOLIO</span> Save
+      </button>
+    `
+    overlay.style.cssText = `
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      z-index: 99999;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    `
+    document.body.appendChild(overlay)
+
+    const saveBtn = overlay.querySelector('#folio-shorts-save')
+    saveBtn.addEventListener('click', () => {
+      const data = extractYouTube()
+      if (!data || !data.title) {
+        showToast('Could not detect video', 'error')
+        return
+      }
+
+      const params = new URLSearchParams({
+        title: data.title || '',
+        url: data.url || window.location.href,
+        platform: data.platform || 'YOUTUBE_SHORT',
+        ...(data.thumbnail && { thumbnail: data.thumbnail }),
+        ...(data.views && { views: data.views.toString() }),
+      })
+
+      window.open(`${API_BASE}/save?${params.toString()}`, '_blank')
+      saveBtn.innerHTML = '<span class="folio-logo">FOLIO</span> ✓ Opened'
+      setTimeout(() => {
+        saveBtn.innerHTML = '<span class="folio-logo">FOLIO</span> Save'
+      }, 2000)
+    })
+  }
+
+  const removeOverlay = () => {
+    if (overlay) {
+      overlay.remove()
+      overlay = null
+    }
+  }
+
+  // Check if on Shorts page and show/hide overlay
+  const checkForShorts = () => {
+    const isShorts = window.location.pathname.includes('/shorts/')
+    if (isShorts) {
+      createOverlay()
+    } else {
+      removeOverlay()
+    }
+  }
+
+  // Initial check
+  checkForShorts()
+
+  // Watch for URL changes (YouTube is SPA)
+  let lastUrl = window.location.href
+  const urlObserver = new MutationObserver(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href
+      checkForShorts()
+    }
+  })
+  urlObserver.observe(document.body, { childList: true, subtree: true })
+
+  // Also check on popstate
+  window.addEventListener('popstate', checkForShorts)
+}
+
 // Fixed overlay for TikTok that updates as user scrolls
 function initTikTokFixedOverlay() {
   console.log('FOLIO: TikTok fixed overlay initialized')
@@ -263,8 +347,8 @@ function initHoverOverlay(platform) {
     let videoContainers = []
 
     if (platform === 'youtube') {
-      // YouTube: target video thumbnails and player
-      videoContainers = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, #movie_player')
+      // YouTube: target video thumbnails, player, and Shorts
+      videoContainers = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, #movie_player, ytd-reel-video-renderer, ytd-shorts-video-renderer, #shorts-player')
     } else if (platform === 'tiktok') {
       // TikTok: target video containers
       videoContainers = document.querySelectorAll('[data-e2e="recommend-list-item-container"], [class*="DivItemContainer"], [class*="video-feed-item"]')
