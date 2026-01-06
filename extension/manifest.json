@@ -12,7 +12,14 @@
     "*://www.tiktok.com/*",
     "*://www.instagram.com/*",
     "*://twitter.com/*",
-    "*://x.com/*"
+    "*://x.com/*",
+    "*://www.twitch.tv/*",
+    "*://twitch.tv/*",
+    "*://soundcloud.com/*",
+    "*://www.soundcloud.com/*",
+    "*://*.bandcamp.com/*",
+    "*://www.mixcloud.com/*",
+    "*://mixcloud.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -29,7 +36,14 @@
         "*://www.tiktok.com/*",
         "*://www.instagram.com/*",
         "*://twitter.com/*",
-        "*://x.com/*"
+        "*://x.com/*",
+        "*://www.twitch.tv/*",
+        "*://twitch.tv/*",
+        "*://soundcloud.com/*",
+        "*://www.soundcloud.com/*",
+        "*://*.bandcamp.com/*",
+        "*://www.mixcloud.com/*",
+        "*://mixcloud.com/*"
       ],
       "js": ["content.js"],
       "css": ["content.css"]

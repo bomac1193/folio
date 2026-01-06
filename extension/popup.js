@@ -9,6 +9,10 @@ const PLATFORMS = {
   'instagram.com': 'INSTAGRAM_REEL',
   'twitter.com': 'TWITTER',
   'x.com': 'TWITTER',
+  'twitch.tv': 'TWITCH',
+  'soundcloud.com': 'SOUNDCLOUD',
+  'bandcamp.com': 'BANDCAMP',
+  'mixcloud.com': 'MIXCLOUD',
 }
 
 const PLATFORM_LABELS = {
@@ -17,6 +21,10 @@ const PLATFORM_LABELS = {
   TIKTOK: 'TikTok',
   INSTAGRAM_REEL: 'Instagram',
   TWITTER: 'Twitter/X',
+  TWITCH: 'Twitch',
+  SOUNDCLOUD: 'SoundCloud',
+  BANDCAMP: 'Bandcamp',
+  MIXCLOUD: 'Mixcloud',
 }
 
 // State

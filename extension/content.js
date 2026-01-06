@@ -38,6 +38,14 @@ if (hostname === 'tiktok.com') {
   initHoverOverlay('instagram')
 } else if (hostname === 'twitter.com' || hostname === 'x.com') {
   initHoverOverlay('twitter')
+} else if (hostname === 'twitch.tv') {
+  initMusicPlatformOverlay('twitch')
+} else if (hostname === 'soundcloud.com') {
+  initMusicPlatformOverlay('soundcloud')
+} else if (hostname.includes('bandcamp.com')) {
+  initMusicPlatformOverlay('bandcamp')
+} else if (hostname === 'mixcloud.com') {
+  initMusicPlatformOverlay('mixcloud')
 }
 
 function injectStyles() {
@@ -288,6 +296,67 @@ function initYouTubeShortsOverlay() {
 
   // Also check on popstate
   window.addEventListener('popstate', checkForShorts)
+}
+
+// Fixed overlay for music platforms (Twitch, SoundCloud, Bandcamp, Mixcloud)
+function initMusicPlatformOverlay(platform) {
+  console.log('FOLIO: Music platform overlay initialized for', platform)
+
+  const overlay = document.createElement('div')
+  overlay.id = `folio-${platform}-fixed`
+  overlay.innerHTML = `
+    <button class="folio-save-btn" id="folio-${platform}-save">
+      <span class="folio-logo">FOLIO</span> Save
+    </button>
+  `
+  overlay.style.cssText = `
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 99999;
+    font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  `
+  document.body.appendChild(overlay)
+
+  const saveBtn = overlay.querySelector(`#folio-${platform}-save`)
+  saveBtn.addEventListener('click', () => {
+    let data
+    switch (platform) {
+      case 'twitch':
+        data = extractTwitch()
+        break
+      case 'soundcloud':
+        data = extractSoundCloud()
+        break
+      case 'bandcamp':
+        data = extractBandcamp()
+        break
+      case 'mixcloud':
+        data = extractMixcloud()
+        break
+      default:
+        data = null
+    }
+
+    if (!data || !data.title) {
+      showToast('Could not detect content', 'error')
+      return
+    }
+
+    const params = new URLSearchParams({
+      title: data.title || '',
+      url: data.url || window.location.href,
+      platform: data.platform || platform.toUpperCase(),
+      ...(data.thumbnail && { thumbnail: data.thumbnail }),
+      ...(data.views && { views: data.views.toString() }),
+    })
+
+    window.open(`${API_BASE}/save?${params.toString()}`, '_blank')
+    saveBtn.innerHTML = '<span class="folio-logo">FOLIO</span> ✓ Opened'
+    setTimeout(() => {
+      saveBtn.innerHTML = '<span class="folio-logo">FOLIO</span> Save'
+    }, 2000)
+  })
 }
 
 // Fixed overlay for TikTok that updates as user scrolls
@@ -713,7 +782,17 @@ function extractContent() {
     case 'twitter.com':
     case 'x.com':
       return extractTwitter()
+    case 'twitch.tv':
+      return extractTwitch()
+    case 'soundcloud.com':
+      return extractSoundCloud()
+    case 'mixcloud.com':
+      return extractMixcloud()
     default:
+      // Check for bandcamp subdomains (artist.bandcamp.com)
+      if (hostname.includes('bandcamp.com')) {
+        return extractBandcamp()
+      }
       return null
   }
 }
@@ -1005,6 +1084,228 @@ function extractTwitter() {
     views: null,
     engagement: null,
     platform: 'TWITTER',
+    url: window.location.href,
+  }
+}
+
+function extractTwitch() {
+  const url = window.location.href
+  const isClip = url.includes('/clip/')
+  const isVOD = url.includes('/videos/')
+
+  let title = ''
+  // Try different title selectors for clips, VODs, and live streams
+  const titleSelectors = [
+    '[data-a-target="stream-title"]',           // Live stream title
+    'h2[data-a-target="clip-title"]',           // Clip title
+    '[data-test-selector="clip-title"]',        // Alt clip title
+    'h2.tw-title',                              // Generic title
+    '[data-a-target="video-title"]',            // VOD title
+  ]
+
+  for (const selector of titleSelectors) {
+    const el = document.querySelector(selector)
+    if (el && el.textContent.trim()) {
+      title = el.textContent.trim()
+      break
+    }
+  }
+
+  if (!title) {
+    title = document.title.replace(' - Twitch', '').trim()
+  }
+
+  // Get channel name
+  let channel = ''
+  const channelEl = document.querySelector('[data-a-target="player-info-title"]') ||
+                    document.querySelector('.channel-info-content h1') ||
+                    document.querySelector('[data-a-target="stream-game-link"]')?.closest('div')?.querySelector('a')
+  if (channelEl) channel = channelEl.textContent.trim()
+
+  // Extract from URL if needed
+  if (!channel) {
+    const pathMatch = url.match(/twitch\.tv\/([^\/\?]+)/)
+    if (pathMatch && !['videos', 'clip', 'directory'].includes(pathMatch[1])) {
+      channel = pathMatch[1]
+    }
+  }
+
+  if (channel && title && !title.toLowerCase().includes(channel.toLowerCase())) {
+    title = `${channel}: ${title}`
+  }
+
+  // Get thumbnail
+  let thumbnail = null
+  const ogImage = document.querySelector('meta[property="og:image"]')
+  if (ogImage) thumbnail = ogImage.getAttribute('content')
+
+  // Get viewers
+  let views = null
+  const viewerEl = document.querySelector('[data-a-target="animated-channel-viewers-count"]')
+  if (viewerEl) views = parseViews(viewerEl.textContent)
+
+  return {
+    title: title.slice(0, 500) || 'Twitch Stream',
+    thumbnail,
+    views,
+    engagement: null,
+    platform: 'TWITCH',
+    url,
+  }
+}
+
+function extractSoundCloud() {
+  let title = ''
+
+  // Track title
+  const titleEl = document.querySelector('.soundTitle__title span') ||
+                  document.querySelector('[class*="soundTitle"] span') ||
+                  document.querySelector('.playbackSoundBadge__titleLink')
+  if (titleEl) title = titleEl.textContent.trim()
+
+  // Artist name
+  let artist = ''
+  const artistEl = document.querySelector('.soundTitle__username') ||
+                   document.querySelector('[class*="soundTitle__username"]') ||
+                   document.querySelector('.playbackSoundBadge__lightLink')
+  if (artistEl) artist = artistEl.textContent.trim()
+
+  if (artist && title && !title.includes(artist)) {
+    title = `${artist} - ${title}`
+  }
+
+  if (!title) {
+    title = document.title.replace(' | Listen online for free on SoundCloud', '').trim()
+  }
+
+  // Thumbnail - SoundCloud artwork
+  let thumbnail = null
+  const artworkEl = document.querySelector('.image__full') ||
+                    document.querySelector('.sc-artwork span') ||
+                    document.querySelector('[class*="artwork"] span')
+  if (artworkEl) {
+    const style = artworkEl.getAttribute('style') || ''
+    const urlMatch = style.match(/url\(["']?([^"')]+)["']?\)/)
+    if (urlMatch) thumbnail = urlMatch[1]
+  }
+
+  // Fallback to og:image
+  if (!thumbnail) {
+    const ogImage = document.querySelector('meta[property="og:image"]')
+    if (ogImage) thumbnail = ogImage.getAttribute('content')
+  }
+
+  // Play count
+  let views = null
+  const playCountEl = document.querySelector('.sc-ministats-plays') ||
+                      document.querySelector('[class*="playCount"]')
+  if (playCountEl) views = parseViews(playCountEl.textContent)
+
+  return {
+    title: title.slice(0, 500) || 'SoundCloud Track',
+    thumbnail,
+    views,
+    engagement: null,
+    platform: 'SOUNDCLOUD',
+    url: window.location.href,
+  }
+}
+
+function extractBandcamp() {
+  let title = ''
+
+  // Track or album title
+  const titleEl = document.querySelector('.trackTitle') ||
+                  document.querySelector('#name-section h2.trackTitle') ||
+                  document.querySelector('h2.trackTitle')
+  if (titleEl) title = titleEl.textContent.trim()
+
+  // Artist name
+  let artist = ''
+  const artistEl = document.querySelector('#name-section h3 span a') ||
+                   document.querySelector('[itemprop="byArtist"] a') ||
+                   document.querySelector('.tralbumData a')
+  if (artistEl) artist = artistEl.textContent.trim()
+
+  if (artist && title && !title.includes(artist)) {
+    title = `${artist} - ${title}`
+  }
+
+  if (!title) {
+    title = document.title.replace(' | ', ' - ').trim()
+  }
+
+  // Album art
+  let thumbnail = null
+  const artworkEl = document.querySelector('#tralbumArt img') ||
+                    document.querySelector('.popupImage') ||
+                    document.querySelector('[itemprop="image"]')
+  if (artworkEl) thumbnail = artworkEl.src || artworkEl.getAttribute('href')
+
+  // Fallback to og:image
+  if (!thumbnail) {
+    const ogImage = document.querySelector('meta[property="og:image"]')
+    if (ogImage) thumbnail = ogImage.getAttribute('content')
+  }
+
+  return {
+    title: title.slice(0, 500) || 'Bandcamp Release',
+    thumbnail,
+    views: null,
+    engagement: null,
+    platform: 'BANDCAMP',
+    url: window.location.href,
+  }
+}
+
+function extractMixcloud() {
+  let title = ''
+
+  // Show/mix title
+  const titleEl = document.querySelector('[class*="PlayerSliderComponent"] span') ||
+                  document.querySelector('.cloudcast-title') ||
+                  document.querySelector('h1[class*="title"]')
+  if (titleEl) title = titleEl.textContent.trim()
+
+  // DJ/uploader name
+  let dj = ''
+  const djEl = document.querySelector('[class*="PlayerSliderComponent"] a') ||
+               document.querySelector('.cloudcast-owner-link') ||
+               document.querySelector('[class*="owner"]')
+  if (djEl) dj = djEl.textContent.trim()
+
+  if (dj && title && !title.includes(dj)) {
+    title = `${dj} - ${title}`
+  }
+
+  if (!title) {
+    title = document.title.replace(' | Mixcloud', '').trim()
+  }
+
+  // Artwork
+  let thumbnail = null
+  const artworkEl = document.querySelector('[class*="PlayerSliderComponent"] img') ||
+                    document.querySelector('.cloudcast-artwork img')
+  if (artworkEl) thumbnail = artworkEl.src
+
+  // Fallback to og:image
+  if (!thumbnail) {
+    const ogImage = document.querySelector('meta[property="og:image"]')
+    if (ogImage) thumbnail = ogImage.getAttribute('content')
+  }
+
+  // Play count
+  let views = null
+  const playEl = document.querySelector('[class*="play-count"]') ||
+                 document.querySelector('.stat-plays')
+  if (playEl) views = parseViews(playEl.textContent)
+
+  return {
+    title: title.slice(0, 500) || 'Mixcloud Show',
+    thumbnail,
+    views,
+    engagement: null,
+    platform: 'MIXCLOUD',
     url: window.location.href,
   }
 }

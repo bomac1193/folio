@@ -6,6 +6,10 @@ export const PLATFORMS = {
   YOUTUBE_LONG: 'YOUTUBE_LONG',
   TWITTER: 'TWITTER',
   LINKEDIN: 'LINKEDIN',
+  TWITCH: 'TWITCH',
+  SOUNDCLOUD: 'SOUNDCLOUD',
+  BANDCAMP: 'BANDCAMP',
+  MIXCLOUD: 'MIXCLOUD',
 } as const
 
 export type Platform = (typeof PLATFORMS)[keyof typeof PLATFORMS]
@@ -104,4 +108,8 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   YOUTUBE_LONG: 'YouTube',
   TWITTER: 'Twitter/X',
   LINKEDIN: 'LinkedIn',
+  TWITCH: 'Twitch',
+  SOUNDCLOUD: 'SoundCloud',
+  BANDCAMP: 'Bandcamp',
+  MIXCLOUD: 'Mixcloud',
 }
