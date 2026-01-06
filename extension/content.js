@@ -29,6 +29,7 @@ injectStyles()
 // Initialize platform-specific features
 if (hostname === 'tiktok.com') {
   initTikTokObserver()
+  initTikTokFixedOverlay() // Use fixed overlay for TikTok For You page
   initHoverOverlay('tiktok')
 } else if (hostname === 'youtube.com') {
   initHoverOverlay('youtube')
@@ -203,6 +204,52 @@ function injectStyles() {
     }
   `
   document.head.appendChild(style)
+}
+
+// Fixed overlay for TikTok that updates as user scrolls
+function initTikTokFixedOverlay() {
+  console.log('FOLIO: TikTok fixed overlay initialized')
+
+  // Create fixed overlay in corner
+  const overlay = document.createElement('div')
+  overlay.id = 'folio-tiktok-fixed'
+  overlay.innerHTML = `
+    <button class="folio-save-btn" id="folio-tiktok-save">
+      <span class="folio-logo">FOLIO</span> Save
+    </button>
+  `
+  overlay.style.cssText = `
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 99999;
+    font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  `
+  document.body.appendChild(overlay)
+
+  const saveBtn = overlay.querySelector('#folio-tiktok-save')
+
+  saveBtn.addEventListener('click', () => {
+    const data = extractTikTokCurrentVideo()
+    if (!data || !data.title) {
+      showToast('Could not detect video', 'error')
+      return
+    }
+
+    const params = new URLSearchParams({
+      title: data.title || '',
+      url: data.url || window.location.href,
+      platform: data.platform || 'TIKTOK',
+      ...(data.thumbnail && { thumbnail: data.thumbnail }),
+      ...(data.views && { views: data.views.toString() }),
+    })
+
+    window.open(`${API_BASE}/save?${params.toString()}`, '_blank')
+    saveBtn.innerHTML = '<span class="folio-logo">FOLIO</span> ✓ Opened'
+    setTimeout(() => {
+      saveBtn.innerHTML = '<span class="folio-logo">FOLIO</span> Save'
+    }, 2000)
+  })
 }
 
 function initHoverOverlay(platform) {
@@ -381,7 +428,18 @@ function extractFromContainer(container, platform) {
 }
 
 function extractTikTokFromContainer(container) {
-  // Try to get video link
+  // On TikTok For You page, always get the currently visible video
+  // because the container content changes as user scrolls
+  const isForYouPage = window.location.pathname === '/foryou' ||
+                       window.location.pathname === '/' ||
+                       window.location.pathname.startsWith('/@')
+
+  if (isForYouPage) {
+    // Use the global current video extraction instead
+    return extractTikTokCurrentVideo()
+  }
+
+  // For other pages, try container-specific extraction
   let videoUrl = window.location.href
   let videoId = null
 
@@ -392,13 +450,11 @@ function extractTikTokFromContainer(container) {
     if (match) videoId = match[1]
   }
 
-  // URL might have video ID
   if (!videoId) {
     const urlMatch = window.location.href.match(/\/video\/(\d+)/)
     if (urlMatch) videoId = urlMatch[1]
   }
 
-  // Get title/description
   let title = ''
   const descEl = container.querySelector('[data-e2e="video-desc"], [data-e2e="browse-video-desc"]')
   if (descEl) {
@@ -416,7 +472,6 @@ function extractTikTokFromContainer(container) {
     }
   }
 
-  // Get username
   let username = ''
   const usernameEl = container.querySelector('a[href^="/@"]')
   if (usernameEl) {
@@ -427,7 +482,6 @@ function extractTikTokFromContainer(container) {
     title = `@${username}: ${title}`
   }
 
-  // Get thumbnail
   let thumbnail = null
   const video = container.querySelector('video')
   if (video?.poster) thumbnail = video.poster
@@ -437,7 +491,6 @@ function extractTikTokFromContainer(container) {
     if (img) thumbnail = img.src
   }
 
-  // Capture frame if needed
   if (!thumbnail && video && video.readyState >= 2) {
     try {
       const canvas = document.createElement('canvas')
@@ -448,7 +501,6 @@ function extractTikTokFromContainer(container) {
     } catch (e) {}
   }
 
-  // Get views
   let views = null
   const viewsEl = container.querySelector('[data-e2e="video-views"], [class*="play-count"]')
   if (viewsEl) views = parseViews(viewsEl.textContent)
