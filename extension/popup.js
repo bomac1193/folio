@@ -1,6 +1,6 @@
 // FOLIO Extension Popup
 
-const API_BASE = 'http://localhost:3003'
+const API_BASE = 'http://localhost:3000'
 
 // Platform detection
 const PLATFORMS = {

@@ -1,7 +1,7 @@
 // FOLIO Content Script
 // Extracts content metadata and provides hover overlay for quick save
 
-const API_BASE = 'http://localhost:3003'
+const API_BASE = 'http://localhost:3000'
 
 // Store current video data
 let currentVideoData = null
@@ -1210,11 +1210,55 @@ function extractTwitch() {
     title = `${title} [${game}]`
   }
 
-  // Get thumbnail - try video preview first for live streams
+  // Get thumbnail - different strategies for live, VOD, and clips
   let thumbnail = null
 
-  if (isLive) {
-    // Try to get live preview image
+  if (isVOD) {
+    // For VODs, try to get thumbnail from the video info card or preview
+    const vodThumbSelectors = [
+      // VOD preview image in video player
+      '.video-player__default-player img[src*="vods"]',
+      // Poster image
+      'video[poster]',
+      // Video info card thumbnail
+      '[class*="video-info"] img',
+      // Preview storyboard
+      'img[src*="storyboards"]',
+    ]
+
+    for (const selector of vodThumbSelectors) {
+      const el = document.querySelector(selector)
+      if (el) {
+        thumbnail = el.src || el.getAttribute('poster')
+        if (thumbnail && !thumbnail.includes('profile_image')) break
+      }
+    }
+
+    // Construct VOD thumbnail URL from video ID if we have it
+    if (!thumbnail) {
+      const videoIdMatch = url.match(/\/videos\/(\d+)/)
+      if (videoIdMatch) {
+        // Twitch VOD thumbnail URL pattern - use the preview API
+        thumbnail = `https://static-cdn.jtvnw.net/cf_vods/dgeft87wbj63p/thumb/${videoIdMatch[1]}/thumb0-640x360.jpg`
+      }
+    }
+  } else if (isClip) {
+    // For clips, try clip-specific selectors
+    const clipThumbSelectors = [
+      'img[src*="clips-media-assets"]',
+      '.clip-thumbnail img',
+      '[class*="clip"] img[src*="twitch"]',
+    ]
+
+    for (const selector of clipThumbSelectors) {
+      const el = document.querySelector(selector)
+      if (el && el.src && !el.src.includes('profile_image')) {
+        thumbnail = el.src
+        break
+      }
+    }
+  } else if (isLive) {
+    // Try to get live preview image from video element
     const previewEl = document.querySelector('video')
     if (previewEl) {
       try {
@@ -1229,10 +1273,16 @@ function extractTwitch() {
     }
   }
 
-  // Fallback to og:image
+  // Fallback to og:image, but ONLY if it's not a profile image
   if (!thumbnail) {
     const ogImage = document.querySelector('meta[property="og:image"]')
-    if (ogImage) thumbnail = ogImage.getAttribute('content')
+    if (ogImage) {
+      const ogUrl = ogImage.getAttribute('content')
+      // Skip if it's a profile image
+      if (ogUrl && !ogUrl.includes('profile_image') && !ogUrl.includes('jtv_user_pictures')) {
+        thumbnail = ogUrl
+      }
+    }
   }
 
   // Get live viewer count
