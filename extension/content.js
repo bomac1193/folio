@@ -1,7 +1,7 @@
 // FOLIO Content Script
 // Extracts content metadata and provides hover overlay for quick save
 
-const API_BASE = 'http://localhost:3000'
+const API_BASE = 'http://localhost:3001'
 
 // Store current video data
 let currentVideoData = null
