@@ -1,9 +1,8 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import CollectionGrid from '@/components/CollectionGrid'
-import CollectionStats from '@/components/CollectionStats'
 import CollectionFilters from '@/components/CollectionFilters'
-import RescanButton from '@/components/RescanButton'
+import DashboardHeader from '@/components/DashboardHeader'
 import { PLATFORMS, type Platform } from '@/lib/types'
 
 interface PageProps {
@@ -49,26 +48,14 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     platforms: [...new Set(allCollections.map(c => c.platform))].length,
   }
 
+  const itemCount = params.platform || params.search
+    ? `${collections.length} of ${allCollections.length} items`
+    : `${collections.length} items saved`
+
   return (
     <div className="h-full">
       {/* Header */}
-      <header className="px-8 py-6 border-b border-[var(--folio-border)] bg-white">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-xl font-normal">Collection</h1>
-            <p className="text-sm text-[var(--folio-text-muted)] mt-1">
-              {params.platform || params.search
-                ? `${collections.length} of ${allCollections.length} items`
-                : `${collections.length} items saved`
-              }
-            </p>
-          </div>
-          <div className="flex items-center gap-6">
-            <RescanButton />
-            <CollectionStats stats={stats} />
-          </div>
-        </div>
-      </header>
+      <DashboardHeader itemCount={itemCount} stats={stats} />
 
       {/* Filters */}
       <CollectionFilters />
@@ -98,7 +85,7 @@ function EmptyState() {
         </p>
         <div className="space-y-4">
           <p className="text-xs text-[var(--folio-text-muted)]">
-            Use the browser extension to save from YouTube, TikTok, Instagram, or Twitter
+            Click &quot;+ Add URL&quot; above to paste a link, or use the browser extension
           </p>
         </div>
       </div>

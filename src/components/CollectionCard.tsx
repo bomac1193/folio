@@ -1,16 +1,48 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import type { Collection } from '@prisma/client'
 import { PLATFORM_LABELS, CONTENT_TYPE_LABELS, type Platform, type ContentType, type PerformanceDNA, type AestheticDNA } from '@/lib/types'
 
 interface CollectionCardProps {
   collection: Collection
+  onPlay?: () => void
+  translatedTitle?: string
+  targetLanguage?: string
 }
 
-export default function CollectionCard({ collection }: CollectionCardProps) {
+export default function CollectionCard({ collection, onPlay, translatedTitle, targetLanguage }: CollectionCardProps) {
+  const router = useRouter()
   const [isHovered, setIsHovered] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    if (!showConfirm) {
+      setShowConfirm(true)
+      return
+    }
+
+    setIsDeleting(true)
+    try {
+      const res = await fetch(`/api/collections/${collection.id}`, {
+        method: 'DELETE',
+      })
+
+      if (res.ok) {
+        router.refresh()
+      }
+    } catch (error) {
+      console.error('Delete failed:', error)
+    } finally {
+      setIsDeleting(false)
+      setShowConfirm(false)
+    }
+  }
 
   const performanceDNA: PerformanceDNA | null = collection.performanceDNA
     ? JSON.parse(collection.performanceDNA)
@@ -26,11 +58,18 @@ export default function CollectionCard({ collection }: CollectionCardProps) {
   // Check if we have real API data
   const hasRealData = collection.viralVelocity !== null
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Don't trigger play if clicking delete button
+    if ((e.target as HTMLElement).closest('button')) return
+    onPlay?.()
+  }
+
   return (
     <div
       className="card p-0 cursor-pointer group"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onClick={handleCardClick}
     >
       {/* Thumbnail */}
       <div className="relative aspect-video bg-[var(--folio-offwhite)]">
@@ -50,7 +89,7 @@ export default function CollectionCard({ collection }: CollectionCardProps) {
         )}
 
         {/* Platform & Content Type badges */}
-        <div className="absolute top-3 left-3 flex gap-2">
+        <div className="absolute top-3 left-3 flex gap-2 z-10">
           <span className="platform-badge">
             {PLATFORM_LABELS[collection.platform as Platform]}
           </span>
@@ -69,9 +108,20 @@ export default function CollectionCard({ collection }: CollectionCardProps) {
           )}
         </div>
 
+        {/* Play button overlay */}
+        {isHovered && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-5">
+            <div className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+              <svg className="w-6 h-6 text-black ml-1" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          </div>
+        )}
+
         {/* Hover overlay with metrics and DNA summary */}
         {isHovered && (hasRealData || performanceDNA || aestheticDNA) && (
-          <div className="absolute inset-0 bg-[var(--folio-black)]/90 p-4 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-[var(--folio-black)]/90 p-4 pt-12 flex flex-col justify-end pointer-events-none">
             <div className="text-white text-xs space-y-2">
               {/* Real metrics from API */}
               {hasRealData && (
@@ -113,13 +163,34 @@ export default function CollectionCard({ collection }: CollectionCardProps) {
             </div>
           </div>
         )}
+
+        {/* Delete button - rendered after overlay so it's on top */}
+        {isHovered && (
+          <button
+            onClick={handleDelete}
+            onMouseLeave={() => setShowConfirm(false)}
+            disabled={isDeleting}
+            className={`absolute top-3 right-3 z-10 w-7 h-7 flex items-center justify-center text-white text-sm font-medium transition-all ${
+              showConfirm
+                ? 'bg-red-600 hover:bg-red-700 rounded px-2 w-auto'
+                : 'bg-black/60 hover:bg-red-600 rounded-full'
+            }`}
+          >
+            {isDeleting ? '...' : showConfirm ? 'Delete?' : '×'}
+          </button>
+        )}
       </div>
 
       {/* Content */}
       <div className="p-4">
         <h3 className="text-sm font-normal leading-snug mb-3 line-clamp-2">
-          {collection.title}
+          {translatedTitle || collection.title}
         </h3>
+        {translatedTitle && (
+          <p className="text-xs text-[var(--folio-text-muted)] mb-2 line-clamp-1 italic">
+            Original: {collection.title}
+          </p>
+        )}
 
         {/* Metrics */}
         <div className="flex items-center gap-4 text-xs text-[var(--folio-text-muted)]">

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PLATFORMS, PLATFORM_LABELS, type Platform, type GeneratedVariant } from '@/lib/types'
+import LanguageSelector, { usePreferredLanguage, getLanguageName } from './LanguageSelector'
 
 interface GenerateInterfaceProps {
   collections: {
@@ -24,6 +25,15 @@ export default function GenerateInterface({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [mode, setMode] = useState<'generate' | 'randomize'>('generate')
+  const { language: preferredLanguage, isLoaded } = usePreferredLanguage()
+  const [outputLanguage, setOutputLanguage] = useState('en')
+
+  // Sync output language with preferred language on load
+  useEffect(() => {
+    if (isLoaded && preferredLanguage) {
+      setOutputLanguage(preferredLanguage)
+    }
+  }, [isLoaded, preferredLanguage])
 
   const handleGenerate = async () => {
     if (mode === 'generate' && !topic.trim()) {
@@ -49,6 +59,7 @@ export default function GenerateInterface({
           referenceItems: selectedReferences.length > 0 ? selectedReferences : undefined,
           count: 10,
           mode,
+          language: getLanguageName(outputLanguage),
         }),
       })
 
@@ -166,6 +177,14 @@ export default function GenerateInterface({
               ))}
             </div>
           </div>
+
+          {/* Output Language */}
+          {isLoaded && (
+            <LanguageSelector
+              value={outputLanguage}
+              onChange={setOutputLanguage}
+            />
+          )}
 
           {/* Reference Items */}
           {collections.length > 0 && (

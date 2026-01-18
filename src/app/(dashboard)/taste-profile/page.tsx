@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import TasteProfileView from '@/components/TasteProfileView'
+import TasteProfileTabs from '@/components/TasteProfileTabs'
+import TrainingInterface from '@/components/training/TrainingInterface'
 
 export default async function TasteProfilePage() {
   const session = await auth()
@@ -44,11 +45,11 @@ export default async function TasteProfilePage() {
         )}
       </header>
 
-      {/* Content */}
+      {/* Content with Tabs */}
       {!tasteProfile || tasteProfile.itemCount === 0 ? (
-        <EmptyState />
+        <EmptyStateWithTraining />
       ) : (
-        <TasteProfileView
+        <TasteProfileTabs
           tasteProfile={{
             performancePatterns: tasteProfile.performancePatterns
               ? JSON.parse(tasteProfile.performancePatterns)
@@ -61,6 +62,8 @@ export default async function TasteProfilePage() {
               : null,
             itemCount: tasteProfile.itemCount,
             lastTrainedAt: tasteProfile.lastTrainedAt,
+            trainingRatingsCount: tasteProfile.trainingRatingsCount,
+            confidenceScore: tasteProfile.confidenceScore,
           }}
           platformCounts={platformCounts}
           dateRange={dateRange}
@@ -70,19 +73,30 @@ export default async function TasteProfilePage() {
   )
 }
 
-function EmptyState() {
+function EmptyStateWithTraining() {
   return (
-    <div className="flex flex-col items-center justify-center py-32 px-8">
-      <div className="max-w-md text-center">
-        <h2 className="text-lg font-normal mb-4">No taste profile yet.</h2>
-        <p className="text-sm text-[var(--folio-text-secondary)] mb-4">
-          Your taste profile develops as you save and analyze content.
-          Start building your collection to see patterns emerge.
-        </p>
-        <a href="/dashboard" className="btn btn-secondary">
-          Go to Collection
-        </a>
+    <div className="h-full">
+      {/* Empty State Card */}
+      <div className="flex flex-col items-center justify-center py-16 px-8 border-b border-[var(--folio-border)]">
+        <div className="max-w-md text-center">
+          <h2 className="text-lg font-normal mb-4">No taste profile yet.</h2>
+          <p className="text-sm text-[var(--folio-text-secondary)] mb-4">
+            Your taste profile develops as you save content or train with the rating system below.
+          </p>
+          <a href="/dashboard" className="btn btn-secondary">
+            Go to Collection
+          </a>
+        </div>
       </div>
+
+      {/* Training Section - available even without saved items */}
+      <div className="px-8 py-6 border-b border-[var(--folio-border)] bg-white">
+        <h2 className="text-sm font-normal">Or start training your profile</h2>
+        <p className="text-xs text-[var(--folio-text-muted)] mt-1">
+          Rate content to build your taste profile without saving items.
+        </p>
+      </div>
+      <TrainingInterface />
     </div>
   )
 }
@@ -97,5 +111,5 @@ function formatRelativeTime(date: Date): string {
   if (diffHours < 24) return `${diffHours} hours ago`
   if (diffDays === 1) return 'yesterday'
   if (diffDays < 7) return `${diffDays} days ago`
-  return date.toLocaleDateString()
+  return date.toLocaleDateString('en-US')
 }

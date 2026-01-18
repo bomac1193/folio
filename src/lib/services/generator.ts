@@ -18,21 +18,25 @@ Aesthetic Patterns (what they aesthetically prefer):
 Voice Signature (how they write):
 {voiceSignature}
 
+{trainedPatternsSection}
+
 TASK:
 Generate {count} title variants for:
 Platform: {platform}
 Topic: {topic}
+Output Language: {language}
 {referenceItems}
 
 Each variant must:
 1. Leverage proven performance patterns from their collection
 2. Match their aesthetic signature
 3. Feel authentic to their voice
+4. Be written in {language}
 
 Return a JSON array with exactly {count} objects:
 [
   {
-    "text": "the generated title",
+    "text": "the generated title in {language}",
     "performanceRationale": "brief explanation of why this will perform well",
     "tasteRationale": "brief explanation of how this matches their taste",
     "performanceScore": 0-100,
@@ -54,28 +58,33 @@ Aesthetic Patterns (what they aesthetically prefer):
 Voice Signature (how they write):
 {voiceSignature}
 
+{trainedPatternsSection}
+
 REFERENCE ITEMS FROM THEIR COLLECTION:
 {referenceItems}
 
 TASK:
 Analyze the reference items and taste profile above. Generate {count} COMPLETELY NEW and ORIGINAL hook/title ideas for {platform}.
+Output Language: {language}
 
 These should NOT be rewrites of the reference items. Instead:
 1. Identify the underlying themes, patterns, and angles that make these references compelling
 2. Synthesize new ideas that combine different elements in fresh ways
 3. Generate hooks that the user hasn't thought of yet but would align with their taste
 4. Be creative and unexpected while staying true to their aesthetic
+5. Write all hooks in {language}
 
 The hooks should:
 - Feel like they came from the same creative mind as the references
 - Have viral potential based on their performance patterns
 - Cover different angles/approaches (don't repeat the same formula)
 - Be specific and immediately compelling
+- Be written in {language}
 
 Return a JSON array with exactly {count} objects:
 [
   {
-    "text": "the generated hook/title",
+    "text": "the generated hook/title in {language}",
     "performanceRationale": "why this will perform well based on their patterns",
     "tasteRationale": "how this synthesizes elements from their taste profile",
     "performanceScore": 0-100,
@@ -85,12 +94,69 @@ Return a JSON array with exactly {count} objects:
 
 Return ONLY the JSON array, no additional text.`
 
+interface TrainedPatterns {
+  reinforcedHooks?: string[]
+  reinforcedTones?: string[]
+  reinforcedStyles?: string[]
+  avoidHooks?: string[]
+  avoidTones?: string[]
+  avoidStyles?: string[]
+  preferredPlatforms?: string[]
+}
+
+function buildTrainedPatternsSection(
+  trainedPreferences: string | null,
+  trainedDislikes: string | null,
+  confidenceScore: number
+): string {
+  if (!trainedPreferences || confidenceScore < 0.1) {
+    return ''
+  }
+
+  try {
+    const preferences: TrainedPatterns = JSON.parse(trainedPreferences)
+    const dislikes = trainedDislikes ? JSON.parse(trainedDislikes) : null
+
+    const lines: string[] = []
+    lines.push(`TRAINING-REFINED PATTERNS (Confidence: ${Math.round(confidenceScore * 100)}%):`)
+
+    if (preferences.reinforcedHooks?.length) {
+      lines.push(`Strongly preferred hook types: ${preferences.reinforcedHooks.join(', ')}`)
+    }
+    if (preferences.reinforcedTones?.length) {
+      lines.push(`Preferred tones: ${preferences.reinforcedTones.join(', ')}`)
+    }
+    if (preferences.reinforcedStyles?.length) {
+      lines.push(`Preferred styles: ${preferences.reinforcedStyles.join(', ')}`)
+    }
+
+    if (preferences.avoidHooks?.length) {
+      lines.push(`AVOID these hook types: ${preferences.avoidHooks.join(', ')}`)
+    }
+    if (preferences.avoidTones?.length) {
+      lines.push(`AVOID these tones: ${preferences.avoidTones.join(', ')}`)
+    }
+    if (preferences.avoidStyles?.length) {
+      lines.push(`AVOID these styles: ${preferences.avoidStyles.join(', ')}`)
+    }
+
+    if (lines.length <= 1) {
+      return ''
+    }
+
+    return lines.join('\n')
+  } catch {
+    return ''
+  }
+}
+
 export async function generateVariants(
   userId: string,
   topic: string,
   platform: Platform,
   count: number = 10,
-  referenceItemIds?: string[]
+  referenceItemIds?: string[],
+  language: string = 'English'
 ): Promise<GeneratedVariant[]> {
   // Get user's taste profile
   const tasteProfile = await prisma.tasteProfile.findUnique({
@@ -113,15 +179,24 @@ export async function generateVariants(
     }
   }
 
+  // Build trained patterns section
+  const trainedPatternsSection = buildTrainedPatternsSection(
+    tasteProfile?.trainedPreferences || null,
+    tasteProfile?.trainedDislikes || null,
+    tasteProfile?.confidenceScore || 0
+  )
+
   // Build prompt
   const prompt = GENERATION_PROMPT
     .replace('{performancePatterns}', tasteProfile?.performancePatterns || 'No data yet - use general best practices')
     .replace('{aestheticPatterns}', tasteProfile?.aestheticPatterns || 'No data yet - use general quality standards')
     .replace('{voiceSignature}', tasteProfile?.voiceSignature || 'No data yet - use clear, direct language')
+    .replace('{trainedPatternsSection}', trainedPatternsSection)
     .replace('{count}', count.toString())
     .replace('{platform}', platform)
     .replace('{topic}', topic)
     .replace('{referenceItems}', referenceItemsText)
+    .replace(/{language}/g, language)
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -165,7 +240,8 @@ export async function randomizeHooks(
   userId: string,
   platform: Platform,
   count: number = 10,
-  referenceItemIds?: string[]
+  referenceItemIds?: string[],
+  language: string = 'English'
 ): Promise<GeneratedVariant[]> {
   // Get user's taste profile
   const tasteProfile = await prisma.tasteProfile.findUnique({
@@ -203,14 +279,23 @@ export async function randomizeHooks(
     .map((i) => `- "${i.title}" (${i.platform})`)
     .join('\n')
 
+  // Build trained patterns section
+  const trainedPatternsSection = buildTrainedPatternsSection(
+    tasteProfile?.trainedPreferences || null,
+    tasteProfile?.trainedDislikes || null,
+    tasteProfile?.confidenceScore || 0
+  )
+
   // Build prompt
   const prompt = RANDOMIZE_PROMPT
     .replace('{performancePatterns}', tasteProfile?.performancePatterns || 'No data yet - infer from references')
     .replace('{aestheticPatterns}', tasteProfile?.aestheticPatterns || 'No data yet - infer from references')
     .replace('{voiceSignature}', tasteProfile?.voiceSignature || 'No data yet - infer from references')
+    .replace('{trainedPatternsSection}', trainedPatternsSection)
     .replace('{count}', count.toString())
     .replace('{platform}', platform)
     .replace('{referenceItems}', referenceItemsText)
+    .replace(/{language}/g, language)
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',

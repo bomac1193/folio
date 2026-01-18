@@ -35,6 +35,8 @@ if (hostname === 'tiktok.com') {
   initHoverOverlay('youtube')
   initYouTubeShortsOverlay() // Fixed overlay for Shorts
 } else if (hostname === 'instagram.com') {
+  initInstagramObserver() // Track reel changes when scrolling
+  initInstagramFixedOverlay() // Fixed overlay for Reels
   initHoverOverlay('instagram')
 } else if (hostname === 'twitter.com' || hostname === 'x.com') {
   initHoverOverlay('twitter')
@@ -418,6 +420,315 @@ function initTikTokFixedOverlay() {
       saveBtn.innerHTML = '<span class="folio-logo">FOLIO</span> Save'
     }, 2000)
   })
+}
+
+// Fixed overlay for Instagram Reels - updates as user scrolls
+function initInstagramFixedOverlay() {
+  console.log('FOLIO: Instagram fixed overlay initialized')
+
+  let overlay = null
+
+  const createOverlay = () => {
+    if (overlay) return
+
+    overlay = document.createElement('div')
+    overlay.id = 'folio-instagram-fixed'
+    overlay.innerHTML = `
+      <button class="folio-save-btn" id="folio-instagram-save">
+        <span class="folio-logo">FOLIO</span> Save
+      </button>
+    `
+    overlay.style.cssText = `
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      z-index: 99999;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    `
+    document.body.appendChild(overlay)
+
+    const saveBtn = overlay.querySelector('#folio-instagram-save')
+    saveBtn.addEventListener('click', () => {
+      const data = extractInstagramCurrentReel()
+      if (!data || !data.title) {
+        showToast('Could not detect reel', 'error')
+        return
+      }
+
+      const params = new URLSearchParams({
+        title: data.title || '',
+        url: data.url || window.location.href,
+        platform: 'INSTAGRAM_REEL',
+        contentType: 'VIDEO',
+        ...(data.thumbnail && { thumbnail: data.thumbnail }),
+      })
+
+      window.open(`${API_BASE}/save?${params.toString()}`, '_blank')
+      saveBtn.innerHTML = '<span class="folio-logo">FOLIO</span> ✓ Opened'
+      setTimeout(() => {
+        saveBtn.innerHTML = '<span class="folio-logo">FOLIO</span> Save'
+      }, 2000)
+    })
+  }
+
+  const removeOverlay = () => {
+    if (overlay) {
+      overlay.remove()
+      overlay = null
+    }
+  }
+
+  // Check if on Reels page
+  const checkForReels = () => {
+    const isReels = window.location.pathname.includes('/reel') ||
+                    window.location.pathname.includes('/reels')
+    if (isReels) {
+      createOverlay()
+    } else {
+      removeOverlay()
+    }
+  }
+
+  // Initial check
+  checkForReels()
+
+  // Watch for URL changes (Instagram is SPA)
+  let lastUrl = window.location.href
+  const urlObserver = new MutationObserver(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href
+      checkForReels()
+    }
+  })
+  urlObserver.observe(document.body, { childList: true, subtree: true })
+
+  // Also listen for popstate
+  window.addEventListener('popstate', checkForReels)
+}
+
+// Observer for Instagram - detects when user scrolls to new reel
+function initInstagramObserver() {
+  console.log('FOLIO: Instagram observer initialized')
+
+  let lastDetectedUrl = null
+
+  const checkForNewReel = () => {
+    // Only track on reels pages
+    if (!window.location.pathname.includes('/reel')) return
+
+    const currentUrl = window.location.href
+    if (currentUrl !== lastDetectedUrl) {
+      lastDetectedUrl = currentUrl
+      const data = extractInstagramCurrentReel()
+      console.log('FOLIO: New Instagram reel detected:', data.title?.slice(0, 60))
+
+      chrome.runtime.sendMessage({
+        type: 'VIDEO_CHANGED',
+        data: data
+      }).catch(() => {})
+    }
+  }
+
+  // Check periodically and on scroll
+  setInterval(checkForNewReel, 500)
+
+  let scrollTimeout = null
+  window.addEventListener('scroll', () => {
+    if (scrollTimeout) clearTimeout(scrollTimeout)
+    scrollTimeout = setTimeout(checkForNewReel, 100)
+  }, { passive: true })
+
+  // Watch for URL changes
+  let lastUrl = window.location.href
+  const urlObserver = new MutationObserver(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href
+      setTimeout(checkForNewReel, 300)
+    }
+  })
+  urlObserver.observe(document.body, { childList: true, subtree: true })
+}
+
+// Extract current visible Instagram reel
+function extractInstagramCurrentReel() {
+  // Get video elements and find the one most in view / currently playing
+  const videos = document.querySelectorAll('video')
+  let currentVideo = null
+  let currentContainer = null
+  let bestScore = -1
+
+  for (const video of videos) {
+    const rect = video.getBoundingClientRect()
+    if (rect.height < 100) continue
+
+    const visibility = getVisibilityPercentage(video)
+    const isPlaying = !video.paused ? 0.3 : 0
+    const isCentered = 1 - Math.abs((rect.top + rect.height / 2) - (window.innerHeight / 2)) / (window.innerHeight / 2)
+
+    const score = visibility + isPlaying + (isCentered * 0.5)
+
+    if (score > bestScore && visibility > 0.3) {
+      bestScore = score
+      currentVideo = video
+      // Find the container for this specific video
+      currentContainer = findInstagramContainer(video)
+    }
+  }
+
+  // Extract data from the container of the current video
+  let title = ''
+  let username = ''
+  let reelUrl = window.location.href
+
+  if (currentContainer) {
+    // Try to find the reel's specific URL from a link in the container
+    const reelLink = currentContainer.querySelector('a[href*="/reel/"]')
+    if (reelLink) {
+      reelUrl = reelLink.href
+    }
+
+    // Get username from the container
+    const usernameSelectors = [
+      'a[href^="/"][role="link"] span',
+      'header a[role="link"]',
+      'a[href^="/"] > span',
+      '[class*="username"]',
+    ]
+
+    for (const selector of usernameSelectors) {
+      const el = currentContainer.querySelector(selector)
+      if (el && el.textContent.trim()) {
+        const text = el.textContent.trim()
+        // Username should be short, no spaces, might start with @
+        if (text.length < 50 && !text.includes(' ') && !text.match(/^\d+[KMB]?$/)) {
+          username = text.replace('@', '')
+          break
+        }
+      }
+    }
+
+    // Get caption from the container
+    const captionSelectors = [
+      'h1',
+      'span[class*="_ap3a"]',
+      '[class*="Caption"]',
+      'div > span > span',
+    ]
+
+    for (const selector of captionSelectors) {
+      const els = currentContainer.querySelectorAll(selector)
+      for (const el of els) {
+        const text = el.textContent.trim()
+        // Caption should be longer text, might have hashtags
+        if (text.length > 10 && (text.includes('#') || text.length > 30)) {
+          title = text
+          break
+        }
+      }
+      if (title) break
+    }
+  }
+
+  // Fallbacks if container extraction failed
+  if (!username) {
+    // Try page-level username detection
+    const pageUsername = document.querySelector('header a[role="link"] span')
+    if (pageUsername) username = pageUsername.textContent.trim().replace('@', '')
+  }
+
+  if (!title) {
+    // Try og:title but clean it up
+    const ogTitle = document.querySelector('meta[property="og:title"]')
+    if (ogTitle) {
+      title = ogTitle.getAttribute('content') || ''
+      // Remove common Instagram title patterns
+      title = title.replace(/on Instagram:.*$/, '').replace(/• Instagram$/, '').trim()
+    }
+  }
+
+  if (!title) {
+    title = document.title.replace(' | Instagram', '').replace(' • Instagram', '').trim()
+  }
+
+  // Build final title
+  if (username && title && !title.toLowerCase().includes(username.toLowerCase())) {
+    title = `@${username}: ${title}`
+  } else if (username && !title) {
+    title = `@${username}'s Reel`
+  }
+
+  // Get thumbnail - prefer capturing current frame
+  let thumbnail = null
+
+  // Try to capture frame from the current video first (most accurate)
+  if (currentVideo && currentVideo.readyState >= 2) {
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = currentVideo.videoWidth || 720
+      canvas.height = currentVideo.videoHeight || 1280
+      canvas.getContext('2d').drawImage(currentVideo, 0, 0, canvas.width, canvas.height)
+      thumbnail = canvas.toDataURL('image/jpeg', 0.8)
+    } catch (e) {
+      console.log('FOLIO: Could not capture video frame')
+    }
+  }
+
+  // Try video poster
+  if (!thumbnail && currentVideo?.poster) {
+    thumbnail = currentVideo.poster
+  }
+
+  // Try og:image as last resort
+  if (!thumbnail) {
+    const ogImage = document.querySelector('meta[property="og:image"]')
+    if (ogImage) thumbnail = ogImage.getAttribute('content')
+  }
+
+  console.log('FOLIO: Instagram extraction -', { username, titlePreview: title?.slice(0, 50), url: reelUrl })
+
+  return {
+    title: title.slice(0, 500) || 'Instagram Reel',
+    thumbnail,
+    views: null,
+    engagement: null,
+    platform: 'INSTAGRAM_REEL',
+    url: reelUrl,
+  }
+}
+
+// Find the container element for an Instagram video
+function findInstagramContainer(video) {
+  let el = video.parentElement
+  let depth = 0
+
+  while (el && depth < 20) {
+    // Look for article elements or elements with role="presentation"
+    if (el.tagName === 'ARTICLE') return el
+    if (el.getAttribute('role') === 'presentation') return el
+
+    // Check if this element has username and caption-like content
+    const hasUsername = el.querySelector('a[href^="/"][role="link"]')
+    const hasCaption = el.querySelector('h1, [class*="Caption"]')
+
+    if (hasUsername && hasCaption) return el
+
+    // Check for common Instagram container patterns
+    if (el.className && (
+      el.className.includes('_aatb') ||
+      el.className.includes('_ab8w') ||
+      el.className.includes('x1lliihq')
+    )) {
+      return el
+    }
+
+    el = el.parentElement
+    depth++
+  }
+
+  // Fallback: return a parent several levels up
+  el = video.parentElement
+  for (let i = 0; i < 10 && el; i++) el = el.parentElement
+  return el
 }
 
 function initHoverOverlay(platform) {
@@ -1078,6 +1389,12 @@ function extractYouTube() {
 }
 
 function extractInstagram() {
+  // Use the enhanced extraction for reels
+  if (window.location.pathname.includes('/reel')) {
+    return extractInstagramCurrentReel()
+  }
+
+  // Fallback for non-reel content
   let title = ''
   const ogTitle = document.querySelector('meta[property="og:title"]')
   if (ogTitle) title = ogTitle.getAttribute('content') || ''

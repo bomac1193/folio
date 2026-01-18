@@ -12,7 +12,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { topic, platform, referenceItems, count, mode } = await request.json()
+    const { topic, platform, referenceItems, count, mode, language } = await request.json()
 
     if (!platform) {
       return NextResponse.json(
@@ -36,7 +36,8 @@ export async function POST(request: Request) {
         session.user.id,
         platform as Platform,
         count || 10,
-        referenceItems
+        referenceItems,
+        language || 'English'
       )
     } else {
       // Standard mode - generate variants for a topic
@@ -52,7 +53,8 @@ export async function POST(request: Request) {
         topic,
         platform as Platform,
         count || 10,
-        referenceItems
+        referenceItems,
+        language || 'English'
       )
     }
 

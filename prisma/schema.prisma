@@ -100,10 +100,72 @@ model TasteProfile {
   aestheticPatterns   String?  // what the user aesthetically prefers
   voiceSignature      String?  // linguistic patterns
 
+  // Training-derived patterns (from comparative ratings)
+  trainedPreferences  String?  // JSON: reinforced patterns from liked content
+  trainedDislikes     String?  // JSON: patterns to avoid from disliked content
+
+  // Training metadata
+  trainingRatingsCount Int      @default(0)
+  lastTrainingAt       DateTime?
+  confidenceScore      Float    @default(0)  // 0-1, increases with more ratings
+
   // Metadata
   itemCount     Int      @default(0)
   lastTrainedAt DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// Training suggestion - content discovered for user to rate
+model TrainingSuggestion {
+  id        String   @id @default(cuid())
+  userId    String
+
+  title       String
+  url         String
+  platform    String   // TIKTOK, YOUTUBE_SHORT, YOUTUBE_LONG, SOUNDCLOUD, etc.
+  thumbnail   String?
+  videoId     String?
+
+  // AI-extracted DNA from title/content
+  performanceDNA String?  // JSON
+  aestheticDNA   String?  // JSON
+
+  // Discovery metadata
+  relevanceScore Float    @default(0.5)  // 0-1, how well it matches taste profile
+  searchQuery    String?  // what query found this
+  sourceType     String?  // SIMILAR, TRENDING, RANDOM, EXPLORATION
+
+  status    String   @default("PENDING")  // PENDING, RATED, SKIPPED
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  @@unique([userId, url])
+  @@index([userId, status])
+}
+
+// Training rating - user's preference signal
+model TrainingRating {
+  id        String   @id @default(cuid())
+  userId    String
+
+  ratingType     String   // COMPARATIVE, BINARY
+
+  // For comparative ratings (A vs B)
+  suggestionAId  String?
+  suggestionBId  String?
+
+  // For binary ratings (single item)
+  suggestionId   String?
+
+  // Outcome: A_PREFERRED, B_PREFERRED, BOTH_LIKED, NEITHER, LIKED, SKIPPED
+  outcome        String
+
+  // Response time for engagement quality
+  responseTimeMs Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model GeneratedVariant {

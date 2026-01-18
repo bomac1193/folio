@@ -136,3 +136,73 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   BANDCAMP: 'Bandcamp',
   MIXCLOUD: 'Mixcloud',
 }
+
+// Training types
+export type TrainingRatingType = 'COMPARATIVE' | 'BINARY'
+
+export type TrainingOutcome =
+  | 'A_PREFERRED'
+  | 'B_PREFERRED'
+  | 'BOTH_LIKED'
+  | 'NEITHER'
+  | 'LIKED'
+  | 'DISLIKED'
+  | 'SKIPPED'
+
+export type SuggestionStatus = 'PENDING' | 'RATED' | 'SKIPPED'
+
+export type SuggestionSourceType = 'SIMILAR' | 'TRENDING' | 'RANDOM' | 'EXPLORATION'
+
+export interface TrainingSuggestion {
+  id: string
+  userId: string
+  title: string
+  url: string
+  platform: Platform
+  thumbnail: string | null
+  videoId: string | null
+  performanceDNA: PerformanceDNA | null
+  aestheticDNA: AestheticDNA | null
+  relevanceScore: number
+  searchQuery: string | null
+  sourceType: SuggestionSourceType | null
+  status: SuggestionStatus
+  createdAt: Date
+  expiresAt: Date | null
+}
+
+export interface TrainingRating {
+  id: string
+  userId: string
+  ratingType: TrainingRatingType
+  suggestionAId: string | null
+  suggestionBId: string | null
+  suggestionId: string | null
+  outcome: TrainingOutcome
+  responseTimeMs: number | null
+  createdAt: Date
+}
+
+export interface TrainingPair {
+  suggestionA: TrainingSuggestion
+  suggestionB: TrainingSuggestion
+}
+
+export interface TrainingStats {
+  totalRatings: number
+  comparativeRatings: number
+  binaryRatings: number
+  confidenceScore: number
+  lastTrainingAt: Date | null
+  pendingSuggestions: number
+}
+
+export interface TrainedPatterns {
+  reinforcedHooks: string[]
+  reinforcedTones: string[]
+  reinforcedStyles: string[]
+  avoidHooks: string[]
+  avoidTones: string[]
+  avoidStyles: string[]
+  preferredPlatforms: Platform[]
+}
