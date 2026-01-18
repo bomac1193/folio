@@ -201,3 +201,100 @@ Edit `src/lib/services/youtubeApi.ts` for viral velocity calculation, or `aiAnal
 - TikTok/Instagram/Twitter don't have public APIs for metrics
 - SQLite is fine for dev, consider PostgreSQL for production
 - When modifying `next.config.ts`, restart dev server for changes to apply
+
+---
+
+## Next Steps: Revolutionary Features Roadmap
+
+### Phase 1: Deep Diagnosis Engine
+
+The core problem FOLIO solves: **Creators don't know WHY their content works or fails.** Analytics show what happened, not why.
+
+| Feature | Impact | Description |
+|---------|--------|-------------|
+| **Performance Autopsy** | Critical | When a video underperforms, automatically diagnose: Was it the hook? Thumbnail? Timing? Topic mismatch with audience? Compare against your top performers to identify the gap. |
+| **Taste Drift Detection** | High | Alert when your recent saves diverge from your established taste profile. "Your last 10 saves are 40% more educational than your usual style - intentional pivot or drift?" |
+| **Hook Effectiveness Scoring** | High | Analyze first 3 seconds of saved videos. Build a database of hook patterns that work for YOUR audience based on your top performers. |
+| **Audience Resonance Map** | High | Cluster your content by topic/tone and show which clusters get highest engagement. Reveal blind spots - topics you never cover that align with your taste. |
+
+### Phase 2: Predictive Intelligence
+
+Move from reactive analysis to proactive guidance.
+
+| Feature | Impact | Description |
+|---------|--------|-------------|
+| **Pre-Publish Score** | Critical | Before posting, paste your script/title → get predicted performance score based on your historical patterns. "This hook style has 73% success rate for you." |
+| **Optimal Timing Engine** | High | Analyze when your saved viral content was posted. Cross-reference with your own posting history to find YOUR optimal windows. |
+| **Trend Velocity Tracker** | High | Monitor rising topics in your niche before they peak. "This sound/topic is at 23% of peak - ideal entry window." |
+| **Fatigue Detector** | Medium | "You've posted 4 videos on this topic in 2 weeks. Historical data shows engagement drops 34% after 3 consecutive same-topic posts." |
+
+### Phase 3: Competitive Intelligence
+
+Understand the landscape, not just your own content.
+
+| Feature | Impact | Description |
+|---------|--------|-------------|
+| **Creator Taste Fingerprint** | High | Save competitors' content → FOLIO builds their taste profile. See exactly what patterns they use that you don't. |
+| **Gap Analysis** | High | "Creator X covers these 5 topics you never touch but align with your taste. Opportunity?" |
+| **Style Transfer Generator** | Medium | "Generate a hook in YOUR voice but using the structure that works for Creator X." |
+| **Niche Heat Map** | Medium | Visualize which sub-niches are oversaturated vs. underserved based on your saved content landscape. |
+
+### Phase 4: Content Generation 2.0
+
+Generate content that's actually YOU, not generic AI slop.
+
+| Feature | Impact | Description |
+|---------|--------|-------------|
+| **Voice Clone from Collection** | Critical | Train generation on YOUR saved content + YOUR top performers. Output should be indistinguishable from your natural style. |
+| **A/B Hook Generator** | High | Generate 5 hook variations for any topic, each using a different proven pattern from your collection. Test which resonates. |
+| **Script Scaffolding** | High | Given a topic, generate full script structure based on your highest-performing content patterns (intro length, CTA placement, outro style). |
+| **Thumbnail Concept Generator** | Medium | Based on your saved thumbnails, generate concepts that match your proven visual taste + platform best practices. |
+
+### Phase 5: The Compound Effect
+
+Turn taste into a self-improving asset.
+
+| Feature | Impact | Description |
+|---------|--------|-------------|
+| **Performance Feedback Loop** | Critical | After posting, track actual performance → automatically refine your taste profile. What you THINK works vs. what ACTUALLY works. |
+| **Taste Confidence Score** | High | Show how reliable your taste profile is. "Based on 847 saves and 52 training ratings, your taste profile has 89% predictive accuracy." |
+| **Weekly Taste Report** | Medium | "This week: You saved 12 items. 8 matched your profile, 4 were explorations. 2 explorations revealed new pattern preferences." |
+| **Taste Evolution Timeline** | Medium | Visualize how your taste has evolved over months. See when you pivoted, what triggered it, and how it affected performance. |
+
+### The Diagnosis Problem Solved
+
+Traditional analytics tell you: "This video got 10K views."
+
+FOLIO tells you:
+- **WHY** it got 10K views (hook pattern, topic timing, tone alignment)
+- **HOW** to replicate it (specific patterns that worked)
+- **WHAT** to avoid (patterns that historically underperform for you)
+- **WHEN** to post similar content (trend and fatigue awareness)
+- **WHO** else succeeds with this style (competitive context)
+
+This transforms content creation from guesswork to **pattern recognition at scale**.
+
+---
+
+## Technical Implementation Notes
+
+### Profile Source Modes (Implemented)
+
+The Taste Profile now supports three viewing modes:
+- **Collection**: Patterns derived from your saved items only
+- **Training**: Patterns derived from your training ratings only
+- **All (Combined)**: Merged patterns from both sources
+
+This separation allows creators to see:
+1. What they naturally gravitate toward (Collection)
+2. What they explicitly prefer when forced to choose (Training)
+3. The full picture combining both signals (All)
+
+### Pattern-Based Analysis (Implemented)
+
+FOLIO can analyze content without API dependencies using keyword pattern matching:
+- Sentiment detection (controversial, inspiring, educational, etc.)
+- Format classification (interview, reaction, tutorial, etc.)
+- Niche identification (music production, tech, fitness, etc.)
+- Tone extraction (edgy, chill, confident, etc.)
+- Hook pattern recognition (curiosity gap, controversy, transformation, etc.)
