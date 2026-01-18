@@ -95,12 +95,19 @@ model TasteProfile {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Learned patterns (updated as user saves items) - JSON strings
-  performancePatterns String?  // what makes things viral
-  aestheticPatterns   String?  // what the user aesthetically prefers
+  // Combined patterns (merged from both sources) - JSON strings
+  performancePatterns String?  // what makes things viral (merged)
+  aestheticPatterns   String?  // what the user aesthetically prefers (merged)
   voiceSignature      String?  // linguistic patterns
 
+  // Collection-derived patterns (from saved items analysis)
+  collectionPerformance String?  // JSON: patterns from collection analysis
+  collectionAesthetic   String?  // JSON: aesthetic patterns from collection
+  collectionVoice       String?  // JSON: voice patterns from collection
+
   // Training-derived patterns (from comparative ratings)
+  trainingPerformance String?  // JSON: patterns from training ratings
+  trainingAesthetic   String?  // JSON: aesthetic patterns from training
   trainedPreferences  String?  // JSON: reinforced patterns from liked content
   trainedDislikes     String?  // JSON: patterns to avoid from disliked content
 

@@ -400,23 +400,28 @@ export async function refineProfile(userId: string): Promise<{
   const topHooks = getTopByFrequency(allLikedHooks, 10)
   const styleMarkers = getTopByFrequency(allLikedStyles, 8)
 
-  // Build patterns
-  const performancePatterns = {
+  // Build training-specific patterns
+  const trainingPerformance = {
     topHooks,
     preferredStructures: [],
     commonKeywords,
     sentimentProfile: {},
+    formats: {},
+    niches: [],
+    targetAudiences: [],
   }
 
-  const aestheticPatterns = {
+  const trainingAesthetic = {
     dominantTones,
     avoidTones,
     voiceSignature: '',
     complexityPreference: '',
     styleMarkers,
+    emotionalTriggers: [],
+    pacing: '',
   }
 
-  // Build trained preferences
+  // Build trained preferences (legacy structure)
   const trainedPreferences: TrainedPatterns = {
     reinforcedHooks: topHooks,
     reinforcedTones: dominantTones,
@@ -430,22 +435,53 @@ export async function refineProfile(userId: string): Promise<{
   // Calculate confidence score
   const confidenceScore = Math.min(0.95, Math.log10(ratings.length + 1) / 2)
 
+  // Get existing collection data to merge
+  const existingProfile = await prisma.tasteProfile.findUnique({
+    where: { userId },
+    select: {
+      collectionPerformance: true,
+      collectionAesthetic: true,
+      collectionVoice: true,
+      itemCount: true,
+    },
+  })
+
+  // Parse collection data if it exists
+  const collectionPerf = existingProfile?.collectionPerformance
+    ? JSON.parse(existingProfile.collectionPerformance)
+    : null
+  const collectionAesth = existingProfile?.collectionAesthetic
+    ? JSON.parse(existingProfile.collectionAesthetic)
+    : null
+
+  // Merge training and collection patterns for the combined view
+  const mergedPerformance = mergePerformancePatterns(collectionPerf, trainingPerformance)
+  const mergedAesthetic = mergeAestheticPatterns(collectionAesth, trainingAesthetic)
+
   // Update taste profile
   await prisma.tasteProfile.upsert({
     where: { userId },
     create: {
       userId,
-      performancePatterns: JSON.stringify(performancePatterns),
-      aestheticPatterns: JSON.stringify(aestheticPatterns),
+      // Training-specific fields
+      trainingPerformance: JSON.stringify(trainingPerformance),
+      trainingAesthetic: JSON.stringify(trainingAesthetic),
       trainedPreferences: JSON.stringify(trainedPreferences),
+      // Combined/merged fields
+      performancePatterns: JSON.stringify(mergedPerformance),
+      aestheticPatterns: JSON.stringify(mergedAesthetic),
       trainingRatingsCount: ratings.length,
       lastTrainingAt: new Date(),
       confidenceScore,
     },
     update: {
-      performancePatterns: JSON.stringify(performancePatterns),
-      aestheticPatterns: JSON.stringify(aestheticPatterns),
+      // Training-specific fields
+      trainingPerformance: JSON.stringify(trainingPerformance),
+      trainingAesthetic: JSON.stringify(trainingAesthetic),
       trainedPreferences: JSON.stringify(trainedPreferences),
+      // Combined/merged fields
+      performancePatterns: JSON.stringify(mergedPerformance),
+      aestheticPatterns: JSON.stringify(mergedAesthetic),
       trainingRatingsCount: ratings.length,
       lastTrainingAt: new Date(),
       confidenceScore,
@@ -524,5 +560,118 @@ export async function getTrainingStats(userId: string): Promise<{
     confidenceScore: profile?.confidenceScore || 0,
     lastTrainingAt: profile?.lastTrainingAt || null,
     pendingSuggestions: pendingCount,
+  }
+}
+
+// Pattern structures for merging
+interface PerformancePatterns {
+  topHooks: string[]
+  preferredStructures: string[]
+  commonKeywords: string[]
+  sentimentProfile: Record<string, number>
+  formats?: Record<string, number>
+  niches?: string[]
+  targetAudiences?: string[]
+}
+
+interface AestheticPatterns {
+  dominantTones: string[]
+  avoidTones: string[]
+  voiceSignature: string
+  complexityPreference: string
+  styleMarkers: string[]
+  emotionalTriggers?: string[]
+  pacing?: string
+}
+
+/**
+ * Merge performance patterns from collection and training
+ */
+function mergePerformancePatterns(
+  collection: PerformancePatterns | null,
+  training: PerformancePatterns | null
+): PerformancePatterns {
+  if (!collection && !training) {
+    return {
+      topHooks: [],
+      preferredStructures: [],
+      commonKeywords: [],
+      sentimentProfile: {},
+      formats: {},
+      niches: [],
+      targetAudiences: [],
+    }
+  }
+  if (!collection) return training!
+  if (!training) return collection
+
+  // Merge arrays with deduplication, prioritizing training data
+  const mergedHooks = [...new Set([...training.topHooks, ...collection.topHooks])].slice(0, 10)
+  const mergedStructures = [...new Set([...training.preferredStructures, ...collection.preferredStructures])].slice(0, 10)
+  const mergedKeywords = [...new Set([...training.commonKeywords, ...collection.commonKeywords])].slice(0, 20)
+  const mergedNiches = [...new Set([...(training.niches || []), ...(collection.niches || [])])].slice(0, 8)
+  const mergedAudiences = [...new Set([...(training.targetAudiences || []), ...(collection.targetAudiences || [])])].slice(0, 5)
+
+  // Merge sentiment profiles (add counts)
+  const mergedSentiments: Record<string, number> = { ...collection.sentimentProfile }
+  for (const [sentiment, count] of Object.entries(training.sentimentProfile)) {
+    mergedSentiments[sentiment] = (mergedSentiments[sentiment] || 0) + count
+  }
+
+  // Merge formats (add counts)
+  const mergedFormats: Record<string, number> = { ...(collection.formats || {}) }
+  for (const [format, count] of Object.entries(training.formats || {})) {
+    mergedFormats[format] = (mergedFormats[format] || 0) + count
+  }
+
+  return {
+    topHooks: mergedHooks,
+    preferredStructures: mergedStructures,
+    commonKeywords: mergedKeywords,
+    sentimentProfile: mergedSentiments,
+    formats: mergedFormats,
+    niches: mergedNiches,
+    targetAudiences: mergedAudiences,
+  }
+}
+
+/**
+ * Merge aesthetic patterns from collection and training
+ */
+function mergeAestheticPatterns(
+  collection: AestheticPatterns | null,
+  training: AestheticPatterns | null
+): AestheticPatterns {
+  if (!collection && !training) {
+    return {
+      dominantTones: [],
+      avoidTones: [],
+      voiceSignature: '',
+      complexityPreference: '',
+      styleMarkers: [],
+      emotionalTriggers: [],
+      pacing: '',
+    }
+  }
+  if (!collection) return training!
+  if (!training) return collection
+
+  // Merge arrays with deduplication, prioritizing training data
+  const mergedTones = [...new Set([...training.dominantTones, ...collection.dominantTones])].slice(0, 8)
+  const mergedAvoidTones = [...new Set([...training.avoidTones, ...collection.avoidTones])].slice(0, 8)
+  const mergedStyles = [...new Set([...training.styleMarkers, ...collection.styleMarkers])].slice(0, 8)
+  const mergedTriggers = [...new Set([
+    ...(training.emotionalTriggers || []),
+    ...(collection.emotionalTriggers || [])
+  ])].slice(0, 8)
+
+  return {
+    dominantTones: mergedTones,
+    avoidTones: mergedAvoidTones,
+    voiceSignature: training.voiceSignature || collection.voiceSignature,
+    complexityPreference: training.complexityPreference || collection.complexityPreference,
+    styleMarkers: mergedStyles,
+    emotionalTriggers: mergedTriggers,
+    pacing: training.pacing || collection.pacing,
   }
 }

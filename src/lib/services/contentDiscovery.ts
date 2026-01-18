@@ -5,8 +5,6 @@ import type {
   TrainingSuggestion,
   TastePatterns,
   AestheticPatterns,
-  PerformanceDNA,
-  AestheticDNA,
   SuggestionSourceType,
 } from '@/lib/types'
 
@@ -15,13 +13,6 @@ const anthropic = new Anthropic({
 })
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || ''
-
-interface YouTubeSearchResult {
-  videoId: string
-  title: string
-  thumbnail: string
-  channelTitle: string
-}
 
 interface RankedSuggestion {
   title: string
@@ -34,199 +25,166 @@ interface RankedSuggestion {
   sourceType: SuggestionSourceType
 }
 
-interface SmartQuery {
-  query: string
-  sourceType: SuggestionSourceType
-  rationale: string
-}
+// Curated fallback content - diverse categories for taste training
+const FALLBACK_SHORTS = [
+  // Music & Artists
+  { videoId: 'kTJczUoc26U', title: 'Tyler, The Creator - Making IGOR in 60 seconds', category: 'music' },
+  { videoId: 'K_9tX4eHztY', title: 'How Kanye produces beats differently', category: 'music' },
+  { videoId: 'qNkN2R2s3iM', title: 'Frank Ocean studio session breakdown', category: 'music' },
+  { videoId: 'dM2hZRLjkiI', title: 'Why lo-fi beats are so addictive', category: 'music' },
+  { videoId: 'vGJTaP6anOU', title: 'The secret chord progression every hit uses', category: 'music' },
 
-/**
- * Use Claude to analyze user's collection and generate smart search queries
- */
-async function generateSmartQueries(
-  collectionTitles: string[],
-  performancePatterns: TastePatterns | null,
-  aestheticPatterns: AestheticPatterns | null,
-  includeExploration: boolean = true
-): Promise<SmartQuery[]> {
-  if (collectionTitles.length === 0) {
-    // Fallback queries if no collection
-    return [
-      { query: 'viral short form content tips', sourceType: 'TRENDING', rationale: 'Generic trending' },
-      { query: 'creative video editing shorts', sourceType: 'EXPLORATION', rationale: 'Exploration' },
-    ]
-  }
+  // Creator/Business
+  { videoId: '8B_k_cU2Jzc', title: 'MrBeast reveals his video strategy', category: 'creator' },
+  { videoId: 'p8kxFWvrzHs', title: 'How I got 1M followers in 6 months', category: 'creator' },
+  { videoId: 'FG1Fa-t4AKQ', title: 'The thumbnail trick that doubled my views', category: 'creator' },
+  { videoId: 'r4x3Aqa8r5k', title: 'Why your hooks aren\'t working', category: 'creator' },
+  { videoId: 'LpDvYQuetnw', title: 'The psychology behind viral content', category: 'creator' },
 
-  const prompt = `Analyze this user's video collection and taste profile to generate YouTube Shorts search queries.
+  // Tech & Innovation
+  { videoId: 'aircAruvnKk', title: 'But what is a neural network?', category: 'tech' },
+  { videoId: 'w2RQPqQXz6I', title: 'How ChatGPT actually works in 60s', category: 'tech' },
+  { videoId: 'zjkBMFhNj_g', title: 'Apple\'s design philosophy explained', category: 'tech' },
+  { videoId: '5iI_qD-1bzQ', title: 'The future of AI is terrifying', category: 'tech' },
+  { videoId: 'fVdmHCqJcmY', title: 'Why Silicon Valley thinks different', category: 'tech' },
 
-## User's Collection (recent video titles):
-${collectionTitles.slice(0, 15).map((t, i) => `${i + 1}. ${t}`).join('\n')}
+  // Interviews & Commentary
+  { videoId: 'cHWl0C3yYHM', title: 'Joe Rogan\'s most controversial take', category: 'interview' },
+  { videoId: 'Kq4b4_sUvkk', title: 'Elon Musk explains first principles', category: 'interview' },
+  { videoId: 'y7j0GS92yH0', title: 'Steve Jobs on focus and saying no', category: 'interview' },
+  { videoId: 'jOALrShJQYA', title: 'Naval Ravikant on getting rich', category: 'interview' },
+  { videoId: 'nJPERZDfyWc', title: 'Gary Vee\'s brutal advice for creators', category: 'interview' },
 
-## Current Taste Profile:
-- Top Hooks: ${performancePatterns?.topHooks?.slice(0, 5).join(', ') || 'Not established'}
-- Keywords: ${performancePatterns?.commonKeywords?.slice(0, 8).join(', ') || 'Not established'}
-- Dominant Tones: ${aestheticPatterns?.dominantTones?.slice(0, 5).join(', ') || 'Not established'}
-- Style Markers: ${aestheticPatterns?.styleMarkers?.slice(0, 5).join(', ') || 'Not established'}
+  // Reactions & Entertainment
+  { videoId: '2VNqHrCOtDk', title: 'Reacting to my old cringy videos', category: 'reaction' },
+  { videoId: 'VdCYw5XfNH0', title: 'Musicians react to AI-generated music', category: 'reaction' },
+  { videoId: 'L5zQRqLPgIA', title: 'Millennials try Gen Z slang', category: 'reaction' },
+  { videoId: 'TY6pHqKaHqo', title: 'Expert reacts to movie science', category: 'reaction' },
+  { videoId: 'wJnFB-gsqQ4', title: 'Chefs review instant ramen hacks', category: 'reaction' },
 
-## Task:
-Generate 8 YouTube Shorts search queries:
+  // Educational/How-to
+  { videoId: 'UF8uR6Z6KLc', title: 'Steve Jobs Stanford speech highlights', category: 'educational' },
+  { videoId: 'arj7oStGLkU', title: 'How to speak so people listen', category: 'educational' },
+  { videoId: 'iG9CE55wbtY', title: 'Do schools kill creativity?', category: 'educational' },
+  { videoId: 'Unzc731iCUY', title: 'Start with Why - Simon Sinek', category: 'educational' },
+  { videoId: 'uD4izuDMUQA', title: 'The power of introverts', category: 'educational' },
 
-1. **SIMILAR queries (4)**: Find content similar to what they've collected. Extract specific themes, creators, niches, or styles from their collection. Be SPECIFIC - use actual terms, creator styles, or niche topics from their collection.
+  // Lifestyle & Vlogs
+  { videoId: 'ky3RhFMbD2I', title: '5AM morning routine that changed my life', category: 'lifestyle' },
+  { videoId: 'kXdbbrlhw3Y', title: 'Day in my life as a startup founder', category: 'lifestyle' },
+  { videoId: 'BRBE3Q3RQ_E', title: 'Moving to NYC alone at 22', category: 'lifestyle' },
+  { videoId: 'n3Xv_g3g-mA', title: 'I tried the monk lifestyle for 30 days', category: 'lifestyle' },
+  { videoId: 'xNjI03CGkb4', title: 'Minimalist apartment tour in Tokyo', category: 'lifestyle' },
 
-2. **EXPLORATION queries (${includeExploration ? '4' : '0'})**: Find content that tests their boundaries. These should be:
-   - Different tones than their current dominantTones (to test if they like other tones)
-   - Adjacent niches they might not have explored
-   - Contrasting styles to establish what they DON'T like
-   ${includeExploration ? 'This helps establish taste boundaries and "avoid tones".' : 'Skip exploration queries.'}
+  // Documentary style
+  { videoId: 'jNgP6d9HraI', title: 'The dark side of hustle culture', category: 'documentary' },
+  { videoId: 'r8UhkLwAiMY', title: 'Inside the mind of a billionaire', category: 'documentary' },
+  { videoId: 'OMq9he-5HUU', title: 'Why we\'re all addicted to our phones', category: 'documentary' },
+  { videoId: 'Hu4Yvq-g7_Y', title: 'The algorithm is changing your brain', category: 'documentary' },
+  { videoId: 'xNRJwmlRBNU', title: 'How social media destroyed attention', category: 'documentary' },
 
-Return as JSON array:
-[
-  {"query": "specific search terms", "sourceType": "SIMILAR" | "EXPLORATION", "rationale": "why this query"}
+  // Comedy & Sketches
+  { videoId: 'VfCYZ3pks48', title: 'POV: You\'re a startup founder', category: 'comedy' },
+  { videoId: 'sIlNIVXpIns', title: 'Corporate meetings be like', category: 'comedy' },
+  { videoId: 'QqffY_OYp54', title: 'When your friend becomes an influencer', category: 'comedy' },
+  { videoId: 'zUQiUFZ5RDw', title: 'Gen Z explains the internet to boomers', category: 'comedy' },
+  { videoId: 'fHlhMC0c634', title: 'Dating apps in 2024', category: 'comedy' },
+
+  // Fitness & Health
+  { videoId: '0L_WniNwtB0', title: 'The workout that builds muscle fastest', category: 'fitness' },
+  { videoId: 'gC_L9qAHVJ8', title: 'Why you can\'t lose weight', category: 'fitness' },
+  { videoId: 'oyGEVPuumtk', title: 'David Goggins on mental toughness', category: 'fitness' },
+  { videoId: 'IODxDxX7oi4', title: 'Stretches to fix your posture', category: 'fitness' },
+  { videoId: '2pLT-olgUJs', title: 'Sleep hacks backed by science', category: 'fitness' },
+
+  // Finance & Business
+  { videoId: 'PHe0bXAIuk0', title: 'How the rich avoid taxes legally', category: 'finance' },
+  { videoId: 'SMKsolIET7E', title: 'Investing explained in 60 seconds', category: 'finance' },
+  { videoId: 'cZ5mCfJTjXw', title: 'The psychology of money', category: 'finance' },
+  { videoId: 'pFZfMnA_BSk', title: 'Why most businesses fail', category: 'finance' },
+  { videoId: 'RJaWX3FQYB4', title: 'Side hustles that actually work', category: 'finance' },
+
+  // Art & Design
+  { videoId: 'wZZ7oFKsKzY', title: 'The design secret Apple doesn\'t share', category: 'design' },
+  { videoId: 'GDpmVUEjagg', title: 'Why this logo is worth $1 billion', category: 'design' },
+  { videoId: 'E1oZhEIrer4', title: 'Fonts you see everywhere explained', category: 'design' },
+  { videoId: 'GNrrzDxnSHE', title: 'Color theory in 60 seconds', category: 'design' },
+  { videoId: 'rvLFEh7V18A', title: 'How Pixar makes you cry', category: 'design' },
 ]
 
-Be specific! Not "music videos" but "lo-fi hip hop beats shorts" or "jazz piano improvisation shorts". Extract actual themes from their collection.`
+/**
+ * Get fallback content instantly without API calls
+ */
+function getFallbackSuggestions(): RankedSuggestion[] {
+  // Shuffle and return diverse content
+  const shuffled = [...FALLBACK_SHORTS].sort(() => Math.random() - 0.5)
 
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
-    })
-
-    const text = response.content[0].type === 'text' ? response.content[0].text : ''
-    const jsonMatch = text.match(/\[[\s\S]*\]/)
-    if (jsonMatch) {
-      const queries = JSON.parse(jsonMatch[0]) as SmartQuery[]
-      console.log('[SmartQueries] Generated:', queries.map(q => q.query))
-      return queries
-    }
-  } catch (error) {
-    console.error('[SmartQueries] Claude error:', error)
-  }
-
-  // Fallback: extract keywords from titles
-  const keywords = extractKeywordsFromTitles(collectionTitles)
-  return keywords.slice(0, 4).map(k => ({
-    query: `${k} shorts`,
-    sourceType: 'SIMILAR' as SuggestionSourceType,
-    rationale: 'Extracted from collection',
+  return shuffled.map(item => ({
+    title: item.title,
+    url: `https://youtube.com/shorts/${item.videoId}`,
+    platform: 'YOUTUBE_SHORT' as Platform,
+    thumbnail: `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
+    videoId: item.videoId,
+    relevanceScore: item.category === 'music' || item.category === 'creator' ? 0.7 : 0.5,
+    searchQuery: 'curated',
+    sourceType: (item.category === 'reaction' || item.category === 'comedy' ? 'EXPLORATION' : 'SIMILAR') as SuggestionSourceType,
   }))
 }
 
 /**
- * Main discovery function - uses Claude for smart suggestions
+ * Main discovery function - uses fallback for speed, YouTube API as enhancement
  */
 export async function discoverContent(
   userId: string,
   count: number = 20,
   includeExploration: boolean = true
 ): Promise<TrainingSuggestion[]> {
-  console.log('[ContentDiscovery] Starting smart discovery for user:', userId)
+  console.log('[ContentDiscovery] Starting discovery for user:', userId)
 
-  // Get user's taste profile and ALL collections for analysis
-  const [tasteProfile, collections] = await Promise.all([
-    prisma.tasteProfile.findUnique({ where: { userId } }),
-    prisma.collection.findMany({
-      where: { userId },
-      orderBy: { savedAt: 'desc' },
-      take: 50, // Get more for better analysis
-      select: { title: true, platform: true, tags: true, performanceDNA: true, aestheticDNA: true },
-    }),
-  ])
-
-  const collectionTitles = collections.map(c => c.title)
-
-  // Parse taste patterns
-  let performancePatterns: TastePatterns | null = null
-  let aestheticPatterns: AestheticPatterns | null = null
-
-  if (tasteProfile?.performancePatterns) {
-    try {
-      performancePatterns = JSON.parse(tasteProfile.performancePatterns)
-    } catch (e) {
-      console.log('[ContentDiscovery] Error parsing performance patterns')
-    }
-  }
-
-  if (tasteProfile?.aestheticPatterns) {
-    try {
-      aestheticPatterns = JSON.parse(tasteProfile.aestheticPatterns)
-    } catch (e) {
-      console.log('[ContentDiscovery] Error parsing aesthetic patterns')
-    }
-  }
-
-  // Generate smart queries using Claude
-  const smartQueries = await generateSmartQueries(
-    collectionTitles,
-    performancePatterns,
-    aestheticPatterns,
-    includeExploration
-  )
-
-  console.log('[ContentDiscovery] Smart queries:', smartQueries.length)
-
-  // Fetch content from YouTube Shorts
-  const allResults: RankedSuggestion[] = []
-
-  for (const sq of smartQueries) {
-    try {
-      // Search YouTube Shorts specifically
-      const ytResults = await searchYouTubeShorts(sq.query)
-      console.log(`[ContentDiscovery] Query "${sq.query}" (${sq.sourceType}) returned ${ytResults.length} results`)
-
-      allResults.push(
-        ...ytResults.map((r) => ({
-          title: r.title,
-          url: `https://youtube.com/shorts/${r.videoId}`,
-          platform: 'YOUTUBE_SHORT' as Platform,
-          thumbnail: r.thumbnail,
-          videoId: r.videoId,
-          relevanceScore: sq.sourceType === 'SIMILAR' ? 0.8 : 0.5, // Lower score for exploration
-          searchQuery: sq.query,
-          sourceType: sq.sourceType,
-        }))
-      )
-    } catch (error) {
-      console.error(`[ContentDiscovery] Error searching for "${sq.query}":`, error)
-    }
-  }
-
-  console.log('[ContentDiscovery] Total results before filtering:', allResults.length)
-
-  // Filter out already-rated or saved content
+  // Get existing URLs to filter out
   const existingUrls = await getExistingUrls(userId)
-  const newResults = allResults.filter((r) => !existingUrls.has(r.url))
 
-  console.log('[ContentDiscovery] Results after filtering existing:', newResults.length)
+  // Start with fallback content (instant)
+  let allResults = getFallbackSuggestions()
+    .filter(r => !existingUrls.has(r.url))
 
-  if (newResults.length === 0) {
-    console.log('[ContentDiscovery] No new results, trying broader search')
-    // Try a broader search
-    const broaderResults = await searchYouTubeShorts('trending viral shorts 2024')
-    for (const r of broaderResults) {
-      const url = `https://youtube.com/shorts/${r.videoId}`
-      if (!existingUrls.has(url)) {
-        newResults.push({
-          title: r.title,
-          url,
-          platform: 'YOUTUBE_SHORT' as Platform,
-          thumbnail: r.thumbnail,
-          videoId: r.videoId,
-          relevanceScore: 0.3,
-          searchQuery: 'trending fallback',
-          sourceType: 'TRENDING',
-        })
+  console.log('[ContentDiscovery] Fallback results after filtering:', allResults.length)
+
+  // If we have enough from fallback, use that
+  if (allResults.length >= count) {
+    allResults = allResults.slice(0, count)
+  } else if (YOUTUBE_API_KEY) {
+    // Try YouTube API to supplement (but don't block on it)
+    try {
+      const ytResults = await searchYouTubeShorts('viral shorts trending')
+      if (ytResults.length > 0) {
+        const newResults = ytResults
+          .map(r => ({
+            title: r.title,
+            url: `https://youtube.com/shorts/${r.videoId}`,
+            platform: 'YOUTUBE_SHORT' as Platform,
+            thumbnail: r.thumbnail,
+            videoId: r.videoId,
+            relevanceScore: 0.6,
+            searchQuery: 'youtube-api',
+            sourceType: 'TRENDING' as SuggestionSourceType,
+          }))
+          .filter(r => !existingUrls.has(r.url))
+
+        allResults = [...allResults, ...newResults]
+        console.log('[ContentDiscovery] Added YouTube results:', newResults.length)
       }
+    } catch (error) {
+      console.log('[ContentDiscovery] YouTube API failed, using fallback only')
     }
   }
 
-  // Shuffle to mix similar and exploration
-  const shuffled = newResults.sort(() => Math.random() - 0.5)
+  // Shuffle to add variety
+  allResults = allResults.sort(() => Math.random() - 0.5).slice(0, count)
 
   // Save suggestions to database
   const suggestions: TrainingSuggestion[] = []
-  for (const result of shuffled.slice(0, count)) {
+  for (const result of allResults) {
     try {
       const suggestion = await prisma.trainingSuggestion.create({
         data: {
@@ -246,7 +204,7 @@ export async function discoverContent(
 
       suggestions.push(mapToSuggestion(suggestion))
     } catch (error) {
-      // Might fail on duplicate URL - skip
+      // Skip duplicates
       console.log('[ContentDiscovery] Skipping duplicate:', result.url)
     }
   }
@@ -256,80 +214,43 @@ export async function discoverContent(
 }
 
 /**
- * Search YouTube Shorts specifically
+ * Search YouTube Shorts - non-blocking, returns empty on failure
  */
-async function searchYouTubeShorts(query: string): Promise<YouTubeSearchResult[]> {
+async function searchYouTubeShorts(query: string): Promise<{ videoId: string; title: string; thumbnail: string }[]> {
   if (!YOUTUBE_API_KEY) {
-    console.warn('[YouTube] API key not configured')
     return []
   }
 
   try {
-    // Use videoDuration=short to get Shorts
-    // Also add #shorts to query to prioritize actual Shorts
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000) // 5s timeout
+
     const searchQuery = query.includes('shorts') ? query : `${query} #shorts`
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoDuration=short&maxResults=10&q=${encodeURIComponent(searchQuery)}&key=${YOUTUBE_API_KEY}`
 
-    const res = await fetch(url)
+    const res = await fetch(url, { signal: controller.signal })
+    clearTimeout(timeout)
 
     if (!res.ok) {
-      const errorText = await res.text()
-      console.error('[YouTube] API error:', res.status, errorText)
       return []
     }
 
     const data = await res.json()
-
     if (!data.items) {
-      console.log('[YouTube] No items in response')
       return []
     }
 
     return data.items.map((item: {
       id: { videoId: string }
-      snippet: { title: string; thumbnails: { medium?: { url: string } }; channelTitle: string }
+      snippet: { title: string; thumbnails: { medium?: { url: string } } }
     }) => ({
       videoId: item.id.videoId,
       title: item.snippet.title,
-      thumbnail: item.snippet.thumbnails?.medium?.url || null,
-      channelTitle: item.snippet.channelTitle,
+      thumbnail: item.snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,
     }))
   } catch (error) {
-    console.error('[YouTube] Search error:', error)
     return []
   }
-}
-
-function extractKeywordsFromTitles(titles: string[]): string[] {
-  const stopWords = new Set([
-    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-    'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'been', 'be',
-    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-    'should', 'may', 'might', 'must', 'i', 'you', 'he', 'she', 'it', 'we',
-    'they', 'my', 'your', 'his', 'her', 'its', 'our', 'their', 'this',
-    'that', 'these', 'those', 'what', 'which', 'who', 'whom', 'how', 'why',
-    'when', 'where', 'if', 'then', 'so', 'just', 'like', 'get', 'got',
-    'official', 'video', 'music', 'full', 'new', 'best', 'top',
-  ])
-
-  const wordFreq = new Map<string, number>()
-
-  for (const title of titles) {
-    const words = title
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(w => w.length > 3 && !stopWords.has(w))
-
-    for (const word of words) {
-      wordFreq.set(word, (wordFreq.get(word) || 0) + 1)
-    }
-  }
-
-  return Array.from(wordFreq.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([word]) => word)
 }
 
 async function getExistingUrls(userId: string): Promise<Set<string>> {
@@ -364,9 +285,6 @@ export async function getPendingSuggestions(userId: string): Promise<TrainingSug
   return suggestions.map(mapToSuggestion)
 }
 
-/**
- * Get pending count for checking if we need more
- */
 export async function getPendingCount(userId: string): Promise<number> {
   return prisma.trainingSuggestion.count({
     where: {
@@ -377,9 +295,6 @@ export async function getPendingCount(userId: string): Promise<number> {
   })
 }
 
-/**
- * Fast version - only returns existing suggestions, no discovery
- */
 export async function getSuggestionPairFast(
   userId: string
 ): Promise<{ suggestionA: TrainingSuggestion; suggestionB: TrainingSuggestion } | null> {
@@ -389,7 +304,7 @@ export async function getSuggestionPairFast(
       status: 'PENDING',
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     },
-    orderBy: { createdAt: 'desc' }, // Most recent first
+    orderBy: { createdAt: 'desc' },
     take: 10,
   })
 
@@ -397,33 +312,15 @@ export async function getSuggestionPairFast(
     return null
   }
 
-  // Pick two suggestions - try to mix SIMILAR and EXPLORATION for boundary testing
-  const similar = suggestions.filter(s => s.sourceType === 'SIMILAR')
-  const exploration = suggestions.filter(s => s.sourceType === 'EXPLORATION')
-
-  let suggestionA, suggestionB
-
-  if (similar.length > 0 && exploration.length > 0) {
-    // Mix similar with exploration for better boundary testing
-    suggestionA = similar[Math.floor(Math.random() * similar.length)]
-    suggestionB = exploration[Math.floor(Math.random() * exploration.length)]
-  } else {
-    // Random selection
-    suggestionA = suggestions[0]
-    suggestionB = suggestions.length > 2
-      ? suggestions[Math.floor(Math.random() * (suggestions.length - 1)) + 1]
-      : suggestions[1]
-  }
+  // Pick two random suggestions for variety
+  const shuffled = suggestions.sort(() => Math.random() - 0.5)
 
   return {
-    suggestionA: mapToSuggestion(suggestionA),
-    suggestionB: mapToSuggestion(suggestionB),
+    suggestionA: mapToSuggestion(shuffled[0]),
+    suggestionB: mapToSuggestion(shuffled[1]),
   }
 }
 
-/**
- * Full version - discovers content if needed
- */
 export async function getSuggestionPair(
   userId: string
 ): Promise<{ suggestionA: TrainingSuggestion; suggestionB: TrainingSuggestion } | null> {

@@ -1,48 +1,96 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { PLATFORM_LABELS, type Platform } from '@/lib/types'
+
+type ProfileSourceMode = 'collection' | 'training' | 'all'
+
+interface PerformancePatterns {
+  topHooks: string[]
+  preferredStructures: string[]
+  commonKeywords: string[]
+  sentimentProfile: Record<string, number>
+  formats?: Record<string, number>
+  niches?: string[]
+  targetAudiences?: string[]
+}
+
+interface AestheticPatterns {
+  dominantTones: string[]
+  avoidTones?: string[]
+  voiceSignature: string
+  complexityPreference: string
+  styleMarkers: string[]
+  emotionalTriggers?: string[]
+  pacing?: string
+}
+
+interface VoiceSignature {
+  sentencePatterns: string[]
+  vocabularyLevel: string
+  rhetoricalDevices: string[]
+}
 
 interface TasteProfileViewProps {
   tasteProfile: {
-    performancePatterns: {
-      topHooks: string[]
-      preferredStructures: string[]
-      commonKeywords: string[]
-      sentimentProfile: Record<string, number>
-      formats?: Record<string, number>
-      niches?: string[]
-      targetAudiences?: string[]
-    } | null
-    aestheticPatterns: {
-      dominantTones: string[]
-      avoidTones?: string[]
-      voiceSignature: string
-      complexityPreference: string
-      styleMarkers: string[]
-      emotionalTriggers?: string[]
-      pacing?: string
-    } | null
-    voiceSignature: {
-      sentencePatterns: string[]
-      vocabularyLevel: string
-      rhetoricalDevices: string[]
-    } | null
+    performancePatterns: PerformancePatterns | null
+    aestheticPatterns: AestheticPatterns | null
+    voiceSignature: VoiceSignature | null
     itemCount: number
     lastTrainedAt: Date
+    trainingRatingsCount?: number
   }
   platformCounts: Record<string, number>
   dateRange: { oldest: number; newest: number } | null
 }
 
 export default function TasteProfileView({
-  tasteProfile,
+  tasteProfile: initialProfile,
   platformCounts,
   dateRange,
 }: TasteProfileViewProps) {
-  const { performancePatterns, aestheticPatterns, voiceSignature } = tasteProfile
+  const [sourceMode, setSourceMode] = useState<ProfileSourceMode>('all')
+  const [performancePatterns, setPerformancePatterns] = useState<PerformancePatterns | null>(initialProfile.performancePatterns)
+  const [aestheticPatterns, setAestheticPatterns] = useState<AestheticPatterns | null>(initialProfile.aestheticPatterns)
+  const [voiceSignature, setVoiceSignature] = useState<VoiceSignature | null>(initialProfile.voiceSignature)
+  const [sourceLabel, setSourceLabel] = useState<string>(
+    `Combined from ${initialProfile.itemCount} items + ${initialProfile.trainingRatingsCount || 0} ratings`
+  )
+  const [isLoadingMode, setIsLoadingMode] = useState(false)
   const [isRebuilding, setIsRebuilding] = useState(false)
   const [rebuildStatus, setRebuildStatus] = useState<string | null>(null)
+  const [hasInitialized, setHasInitialized] = useState(false)
+
+  const fetchProfileByMode = useCallback(async (mode: ProfileSourceMode) => {
+    setIsLoadingMode(true)
+    try {
+      const res = await fetch(`/api/taste-profile/source?mode=${mode}`)
+      if (res.ok) {
+        const data = await res.json()
+        setPerformancePatterns(data.performancePatterns)
+        setAestheticPatterns(data.aestheticPatterns)
+        setVoiceSignature(data.voiceSignature)
+        setSourceLabel(data.sourceLabel || '')
+      }
+    } catch (error) {
+      console.error('Failed to fetch profile by mode:', error)
+    } finally {
+      setIsLoadingMode(false)
+    }
+  }, [])
+
+  // Only fetch when mode changes after initial render
+  useEffect(() => {
+    if (hasInitialized) {
+      fetchProfileByMode(sourceMode)
+    } else {
+      setHasInitialized(true)
+    }
+  }, [sourceMode, fetchProfileByMode, hasInitialized])
+
+  const handleModeChange = (mode: ProfileSourceMode) => {
+    setSourceMode(mode)
+  }
 
   const handleRebuildProfile = async () => {
     setIsRebuilding(true)
@@ -73,6 +121,58 @@ export default function TasteProfileView({
 
   return (
     <div className="p-8 max-w-4xl">
+      {/* Profile Source Mode Selector */}
+      <section className="mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <label className="text-xs uppercase tracking-[0.15em] text-[var(--folio-text-muted)]">
+              Profile Source
+            </label>
+            <div className="flex rounded-lg overflow-hidden border border-[var(--folio-border)]">
+              <button
+                onClick={() => handleModeChange('collection')}
+                className={`px-4 py-2 text-xs transition-colors ${
+                  sourceMode === 'collection'
+                    ? 'bg-[var(--folio-text-primary)] text-white'
+                    : 'bg-[var(--folio-bg-secondary)] text-[var(--folio-text-secondary)] hover:bg-[var(--folio-bg-tertiary)]'
+                }`}
+              >
+                Collection
+              </button>
+              <button
+                onClick={() => handleModeChange('training')}
+                className={`px-4 py-2 text-xs transition-colors border-x border-[var(--folio-border)] ${
+                  sourceMode === 'training'
+                    ? 'bg-[var(--folio-text-primary)] text-white'
+                    : 'bg-[var(--folio-bg-secondary)] text-[var(--folio-text-secondary)] hover:bg-[var(--folio-bg-tertiary)]'
+                }`}
+              >
+                Training
+              </button>
+              <button
+                onClick={() => handleModeChange('all')}
+                className={`px-4 py-2 text-xs transition-colors ${
+                  sourceMode === 'all'
+                    ? 'bg-[var(--folio-text-primary)] text-white'
+                    : 'bg-[var(--folio-bg-secondary)] text-[var(--folio-text-secondary)] hover:bg-[var(--folio-bg-tertiary)]'
+                }`}
+              >
+                All (Combined)
+              </button>
+            </div>
+          </div>
+          {isLoadingMode && (
+            <div className="flex items-center gap-2 text-xs text-[var(--folio-text-muted)]">
+              <div className="animate-spin h-3 w-3 border-2 border-[var(--folio-text-muted)] border-t-transparent rounded-full"></div>
+              Loading...
+            </div>
+          )}
+        </div>
+        {sourceLabel && (
+          <p className="mt-2 text-xs text-[var(--folio-text-muted)]">{sourceLabel}</p>
+        )}
+      </section>
+
       {/* Rebuild Profile Banner */}
       <section className="mb-8">
         <div className="card bg-[var(--folio-bg-secondary)]">
@@ -80,7 +180,7 @@ export default function TasteProfileView({
             <div>
               <h3 className="text-sm font-medium mb-1">Rebuild Profile from Collection</h3>
               <p className="text-xs text-[var(--folio-text-muted)]">
-                Re-analyze all {tasteProfile.itemCount} items to update keywords, sentiments, formats, and niches
+                Re-analyze all {initialProfile.itemCount} items to update keywords, sentiments, formats, and niches
               </p>
             </div>
             <button
@@ -419,7 +519,7 @@ export default function TasteProfileView({
               <h3 className="text-xs uppercase tracking-wider text-[var(--folio-text-muted)] mb-1">
                 Total Items
               </h3>
-              <p className="font-data text-2xl">{tasteProfile.itemCount}</p>
+              <p className="font-data text-2xl">{initialProfile.itemCount}</p>
             </div>
             <div>
               <h3 className="text-xs uppercase tracking-wider text-[var(--folio-text-muted)] mb-1">
