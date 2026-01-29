@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_LOGIN === 'true'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -85,6 +86,24 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
+
+        {googleEnabled && (
+          <div className="mt-6">
+            <div className="flex items-center gap-2 mb-3 text-[var(--folio-text-secondary)] text-xs uppercase tracking-widest">
+              <div className="flex-1 h-px bg-[var(--folio-border)]" />
+              <span>Or</span>
+              <div className="flex-1 h-px bg-[var(--folio-border)]" />
+            </div>
+            <button
+              type="button"
+              onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
+              className="btn btn-secondary w-full"
+              disabled={loading}
+            >
+              Continue with Google
+            </button>
+          </div>
+        )}
 
         <div className="mt-8 text-center">
           <p className="text-sm text-[var(--folio-text-secondary)]">
