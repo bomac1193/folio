@@ -3,9 +3,13 @@ import { NextResponse, NextRequest } from 'next/server'
 // Allow local dev origins
 const DEFAULT_ORIGINS = [
   'http://localhost:5173',
+  'http://localhost:5175',
+  'http://localhost:5176',
+  'http://localhost:5177',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
+  'http://localhost:3007',
 ]
 
 function getAllowedOrigins() {
@@ -21,12 +25,7 @@ export function middleware(request: NextRequest) {
   const allowedOrigins = getAllowedOrigins()
   const isAllowed = allowedOrigins.includes(origin)
 
-  // Only handle API routes and preflights
-  if (!request.nextUrl.pathname.startsWith('/api')) {
-    return NextResponse.next()
-  }
-
-  // Build base response
+  // Build base response (cover all routes so redirects carry CORS)
   const response = request.method === 'OPTIONS'
     ? new NextResponse(null, { status: 204 })
     : NextResponse.next()
@@ -43,5 +42,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: '/api/:path*',
+  matcher: '/:path*',
 }
